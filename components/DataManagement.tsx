@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Industry, ConsumptionRecord } from '../types';
 import * as XLSX from 'xlsx';
+import { FolderOpen } from 'lucide-react';
 
 interface DataManagementProps {
   industries: Industry[];
@@ -18,6 +19,14 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
     if (!manualIndustry.subscriptionId || !manualIndustry.name) return;
     setIndustries([...industries, manualIndustry as Industry]);
     setManualIndustry({});
+  };
+
+  const handleOpenDataFolder = () => {
+    if (window.electronAPI && window.electronAPI.openDataFolder) {
+      window.electronAPI.openDataFolder();
+    } else {
+      alert('این قابلیت فقط در نسخه دسکتاپ (EXE) فعال است.');
+    }
   };
 
   const compareDates = (date1: string, date2: string) => {
@@ -155,18 +164,30 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
 
   return (
     <div className="space-y-6">
-      <div className="flex border-b">
-        <button
-          onClick={() => setActiveTab('MASTER')}
-          className={`px-6 py-2 ${activeTab === 'MASTER' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-slate-500'}`}
+      <div className="flex flex-col md:flex-row justify-between items-end border-b pb-1 gap-4">
+        <div className="flex">
+          <button
+            onClick={() => setActiveTab('MASTER')}
+            className={`px-6 py-2 ${activeTab === 'MASTER' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-slate-500'}`}
+          >
+            بانک اطلاعات پایه (صنایع)
+          </button>
+          <button
+            onClick={() => setActiveTab('CONSUMPTION')}
+            className={`px-6 py-2 ${activeTab === 'CONSUMPTION' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-slate-500'}`}
+          >
+            داده‌های مصرف روزانه
+          </button>
+        </div>
+        
+        {/* New Button for Local Data Folder */}
+        <button 
+          onClick={handleOpenDataFolder}
+          className="flex items-center gap-2 text-xs bg-slate-100 text-slate-600 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors mb-2"
+          title="مشاهده محل ذخیره فایل‌های دیتابیس روی کامپیوتر"
         >
-          بانک اطلاعات پایه (صنایع)
-        </button>
-        <button
-          onClick={() => setActiveTab('CONSUMPTION')}
-          className={`px-6 py-2 ${activeTab === 'CONSUMPTION' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-slate-500'}`}
-        >
-          داده‌های مصرف روزانه
+          <FolderOpen size={16} />
+          <span>باز کردن پوشه ذخیره فایل‌ها</span>
         </button>
       </div>
 

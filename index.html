@@ -5,74 +5,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>پایش مصرف گاز صنایع</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;400;700&display=swap" rel="stylesheet">
-    <style>
-      body {
-        font-family: 'Vazirmatn', sans-serif;
-        background-color: #f8fafc;
-      }
-      @media print {
-        @page {
-          size: landscape;
-          margin: 0.5cm;
-        }
-        .no-print {
-          display: none !important;
-        }
-        .print-only {
-          display: block !important;
-        }
-        /* Reset layout for printing to ensure all content is visible */
-        html, body, #root {
-          height: auto !important;
-          overflow: visible !important;
-          background-color: white !important;
-        }
-        /* Unset flex and overflow properties that clip content */
-        main {
-          display: block !important;
-          width: 100% !important;
-          height: auto !important;
-          overflow: visible !important;
-        }
-        /* Target the scrollable container specifically */
-        main > div {
-          height: auto !important;
-          overflow: visible !important;
-          padding: 0 !important;
-        }
-        /* Ensure background colors and graphics are printed */
-        * {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        /* Hide sidebar explicitly */
-        aside {
-          display: none !important;
-        }
-      }
-      /* Custom Range Slider Styling */
-      input[type=range]::-webkit-slider-thumb {
-        background: #2563eb;
-        border: 2px solid #ffffff;
-        box-shadow: 0 0 2px rgba(0,0,0,0.5);
-      }
-    </style>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';">
+    <!-- Note: Dependencies are now handled by package.json and bundled locally -->
   <script type="importmap">
 {
   "imports": {
-    "recharts": "https://esm.sh/recharts@^3.6.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.460.0",
-    "xlsx": "https://esm.sh/xlsx@0.18.5",
+    "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "xlsx": "https://esm.sh/xlsx@^0.18.5",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

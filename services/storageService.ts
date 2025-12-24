@@ -1,10 +1,11 @@
 
 import { Industry, ConsumptionRecord, Restriction } from '../types';
 
+// These keys will be used as filenames (e.g., industries.json) in the Electron backend
 const STORAGE_KEYS = {
-  INDUSTRIES: 'gas_monitoring_industries',
-  CONSUMPTION: 'gas_monitoring_consumption',
-  RESTRICTIONS: 'gas_monitoring_restrictions'
+  INDUSTRIES: 'industries',
+  CONSUMPTION: 'consumption',
+  RESTRICTIONS: 'restrictions'
 };
 
 export const storageService = {

@@ -37,6 +37,7 @@ declare global {
     electronAPI?: {
       saveData: (key: string, data: any) => Promise<void>;
       loadData: (key: string) => Promise<any>;
+      openDataFolder: () => Promise<void>;
     };
   }
 }
