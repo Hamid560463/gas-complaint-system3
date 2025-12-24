@@ -7,34 +7,59 @@ import DataManagement from './components/DataManagement';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
 import ExecutionReports from './components/ExecutionReports';
-import { LayoutDashboard, FileSpreadsheet, Settings as SettingsIcon, BarChart3, Copyright, Printer, ClipboardList } from 'lucide-react';
+import HeadquartersReports from './components/HeadquartersReports';
+import { LayoutDashboard, FileSpreadsheet, Settings as SettingsIcon, BarChart3, Copyright, Printer, ClipboardList, Building2, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('DASHBOARD');
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [consumptionRecords, setConsumptionRecords] = useState<ConsumptionRecord[]>([]);
   const [restrictions, setRestrictions] = useState<Restriction[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
   
   // New State for Dashboard focus
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  // Load data asynchronously on startup
   useEffect(() => {
-    const inds = storageService.getIndustries();
-    const cons = storageService.getConsumption();
-    const rests = storageService.getRestrictions();
-    setIndustries(inds);
-    setConsumptionRecords(cons);
-    setRestrictions(rests);
-    
-    // Default selection
-    if (inds.length > 0 && selectedIds.length === 0) {
-      setSelectedIds([inds[0].subscriptionId]);
-    }
+    const loadAllData = async () => {
+      try {
+        const [inds, cons, rests] = await Promise.all([
+          storageService.getIndustries(),
+          storageService.getConsumption(),
+          storageService.getRestrictions()
+        ]);
+        
+        setIndustries(inds);
+        setConsumptionRecords(cons);
+        setRestrictions(rests);
+        
+        // Default selection
+        if (inds.length > 0 && selectedIds.length === 0) {
+          setSelectedIds([inds[0].subscriptionId]);
+        }
+      } catch (error) {
+        console.error("Failed to load data", error);
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+
+    loadAllData();
   }, []);
 
-  useEffect(() => { storageService.saveIndustries(industries); }, [industries]);
-  useEffect(() => { storageService.saveConsumption(consumptionRecords); }, [consumptionRecords]);
-  useEffect(() => { storageService.saveRestrictions(restrictions); }, [restrictions]);
+  // Only save when data is fully loaded and changes occur
+  useEffect(() => { 
+    if (isLoaded) storageService.saveIndustries(industries); 
+  }, [industries, isLoaded]);
+
+  useEffect(() => { 
+    if (isLoaded) storageService.saveConsumption(consumptionRecords); 
+  }, [consumptionRecords, isLoaded]);
+
+  useEffect(() => { 
+    if (isLoaded) storageService.saveRestrictions(restrictions); 
+  }, [restrictions, isLoaded]);
 
   const renderView = () => {
     switch (currentView) {
@@ -49,6 +74,7 @@ const App: React.FC = () => {
       case 'DATA_ENTRY': return <DataManagement industries={industries} setIndustries={setIndustries} consumption={consumptionRecords} setConsumption={setConsumptionRecords} />;
       case 'REPORTS': return <Reports industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
       case 'EXECUTION_REPORTS': return <ExecutionReports industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
+      case 'HEADQUARTERS_REPORTS': return <HeadquartersReports industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
       case 'SETTINGS': return <Settings restrictions={restrictions} setRestrictions={setRestrictions} industries={industries} />;
       default: return <Dashboard industries={industries} consumption={consumptionRecords} restrictions={restrictions} selectedIds={selectedIds} onSelectIds={setSelectedIds} />;
     }
@@ -60,6 +86,15 @@ const App: React.FC = () => {
       window.print();
     }, 100);
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 text-slate-600 gap-4">
+        <Loader2 size={48} className="animate-spin text-indigo-600" />
+        <p className="font-bold">در حال بارگذاری اطلاعات...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 text-slate-800">
@@ -99,6 +134,13 @@ const App: React.FC = () => {
             <span className="font-bold">گزارشات اجرای پایش</span>
           </button>
           <button
+            onClick={() => setCurrentView('HEADQUARTERS_REPORTS')}
+            className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all duration-300 ${currentView === 'HEADQUARTERS_REPORTS' ? 'bg-indigo-600 shadow-lg shadow-indigo-500/30' : 'hover:bg-slate-800'}`}
+          >
+            <Building2 size={20} />
+            <span className="font-bold">گزارشات ستاد</span>
+          </button>
+          <button
             onClick={() => setCurrentView('REPORTS')}
             className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all duration-300 ${currentView === 'REPORTS' ? 'bg-indigo-600 shadow-lg shadow-indigo-500/30' : 'hover:bg-slate-800'}`}
           >
@@ -121,6 +163,7 @@ const App: React.FC = () => {
                 {currentView === 'DATA_ENTRY' && 'بانک اطلاعات مرکزی'}
                 {currentView === 'SETTINGS' && 'پیکربندی سقف مصرف'}
                 {currentView === 'EXECUTION_REPORTS' && 'گزارشات اجرایی و تخلفات'}
+                {currentView === 'HEADQUARTERS_REPORTS' && 'گزارشات ستادی شرکت ملی گاز'}
                 {currentView === 'REPORTS' && 'خروجی رسمی و گزارشات'}
               </h2>
               <div className="flex items-center gap-2 mt-2">

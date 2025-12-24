@@ -23,10 +23,20 @@ export interface Restriction {
   percentage: number; // 0 to 100
 }
 
-export type ViewType = 'DASHBOARD' | 'DATA_ENTRY' | 'REPORTS' | 'SETTINGS' | 'EXECUTION_REPORTS';
+export type ViewType = 'DASHBOARD' | 'DATA_ENTRY' | 'REPORTS' | 'SETTINGS' | 'EXECUTION_REPORTS' | 'HEADQUARTERS_REPORTS';
 
 export interface DashboardState {
   selectedIds: string[];
   startDay: number;
   endDay: number;
+}
+
+// Interface for Electron Preload Script
+declare global {
+  interface Window {
+    electronAPI?: {
+      saveData: (key: string, data: any) => Promise<void>;
+      loadData: (key: string) => Promise<any>;
+    };
+  }
 }

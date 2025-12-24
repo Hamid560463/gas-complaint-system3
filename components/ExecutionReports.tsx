@@ -153,7 +153,7 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
               className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 transition-all shadow-lg active:scale-95 font-bold whitespace-nowrap"
             >
               <Download size={20} />
-              <span>اکسل</span>
+              <span>دانلود اکسل داخلی</span>
             </button>
           </div>
         </div>
@@ -211,7 +211,7 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
         <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
            <h3 className="font-black text-slate-800 flex items-center gap-2">
              <Gavel size={24} className="text-slate-900" />
-             لیست مشمولین اعمال محدودیت
+             لیست مشمولین اعمال محدودیت (نمای داخلی)
            </h3>
            <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold">
              {reportData.length} واحد شناسایی شد

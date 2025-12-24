@@ -8,25 +8,57 @@ const STORAGE_KEYS = {
 };
 
 export const storageService = {
-  saveIndustries: (data: Industry[]) => {
-    localStorage.setItem(STORAGE_KEYS.INDUSTRIES, JSON.stringify(data));
+  saveIndustries: async (data: Industry[]) => {
+    if (window.electronAPI) {
+      await window.electronAPI.saveData(STORAGE_KEYS.INDUSTRIES, data);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.INDUSTRIES, JSON.stringify(data));
+    }
   },
-  getIndustries: (): Industry[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.INDUSTRIES);
-    return data ? JSON.parse(data) : [];
+  
+  getIndustries: async (): Promise<Industry[]> => {
+    if (window.electronAPI) {
+      const data = await window.electronAPI.loadData(STORAGE_KEYS.INDUSTRIES);
+      return data || [];
+    } else {
+      const data = localStorage.getItem(STORAGE_KEYS.INDUSTRIES);
+      return data ? JSON.parse(data) : [];
+    }
   },
-  saveConsumption: (data: ConsumptionRecord[]) => {
-    localStorage.setItem(STORAGE_KEYS.CONSUMPTION, JSON.stringify(data));
+
+  saveConsumption: async (data: ConsumptionRecord[]) => {
+    if (window.electronAPI) {
+      await window.electronAPI.saveData(STORAGE_KEYS.CONSUMPTION, data);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.CONSUMPTION, JSON.stringify(data));
+    }
   },
-  getConsumption: (): ConsumptionRecord[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.CONSUMPTION);
-    return data ? JSON.parse(data) : [];
+
+  getConsumption: async (): Promise<ConsumptionRecord[]> => {
+    if (window.electronAPI) {
+      const data = await window.electronAPI.loadData(STORAGE_KEYS.CONSUMPTION);
+      return data || [];
+    } else {
+      const data = localStorage.getItem(STORAGE_KEYS.CONSUMPTION);
+      return data ? JSON.parse(data) : [];
+    }
   },
-  saveRestrictions: (data: Restriction[]) => {
-    localStorage.setItem(STORAGE_KEYS.RESTRICTIONS, JSON.stringify(data));
+
+  saveRestrictions: async (data: Restriction[]) => {
+    if (window.electronAPI) {
+      await window.electronAPI.saveData(STORAGE_KEYS.RESTRICTIONS, data);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.RESTRICTIONS, JSON.stringify(data));
+    }
   },
-  getRestrictions: (): Restriction[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.RESTRICTIONS);
-    return data ? JSON.parse(data) : [];
+
+  getRestrictions: async (): Promise<Restriction[]> => {
+    if (window.electronAPI) {
+      const data = await window.electronAPI.loadData(STORAGE_KEYS.RESTRICTIONS);
+      return data || [];
+    } else {
+      const data = localStorage.getItem(STORAGE_KEYS.RESTRICTIONS);
+      return data ? JSON.parse(data) : [];
+    }
   }
 };

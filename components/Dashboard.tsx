@@ -3,9 +3,9 @@ import React, { useMemo, useState } from 'react';
 import { Industry, ConsumptionRecord, Restriction } from '../types';
 import { 
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  Legend, ReferenceLine, PieChart, Pie 
+  Legend, ReferenceLine 
 } from 'recharts';
-import { Users, Gauge, Calendar, AlertTriangle, CheckCircle2, BarChart3, Search, Filter, X } from 'lucide-react';
+import { Users, Gauge, Calendar, AlertTriangle, CheckCircle2, BarChart3, Search, Filter, X, Zap, Droplets, Flame } from 'lucide-react';
 
 interface DashboardProps {
   industries: Industry[];
@@ -71,6 +71,63 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
     return industry.baseMonthAvg * (1 - pct / 100);
   };
 
+  // --- Aggregate Data Calculation (For Top Cards) ---
+  const usageAggregates = useMemo(() => {
+    return uniqueUsages.map(code => {
+      const groupIndustries = industries.filter(i => i.usageCode === code);
+      let totalBase = 0;
+      let totalLast = 0;
+      let compliantCount = 0;
+      
+      groupIndustries.forEach(ind => {
+        totalBase += ind.baseMonthAvg || 0;
+        
+        // Find consumption
+        const rec = consumption.find(c => c.subscriptionId === ind.subscriptionId);
+        if (rec) {
+          // Determine Last Usage
+          let lastVal = 0;
+          if (rec.lastRecordDate) {
+             const parts = rec.lastRecordDate.split('/');
+             const day = parseInt(parts[parts.length - 1], 10);
+             if (!isNaN(day) && day >= 1 && day <= 31) {
+                lastVal = rec.dailyConsumptions[day - 1];
+             }
+          } else {
+             // Fallback
+             let maxDay = 0;
+             rec.dailyConsumptions.forEach((val, idx) => { if (val > 0) maxDay = idx + 1; });
+             if (maxDay > 0) lastVal = rec.dailyConsumptions[maxDay - 1];
+          }
+          
+          totalLast += lastVal;
+
+          // Check Compliance
+          const rest = restrictions.find(r => r.usageCode === code);
+          const limit = (ind.baseMonthAvg || 0) * (1 - (rest?.percentage || 0) / 100);
+          
+          if (lastVal <= limit) compliantCount++;
+        } else {
+           // If no record, assume compliant (or handle as distinct state)
+           compliantCount++;
+        }
+      });
+
+      const totalCount = groupIndustries.length;
+      const compliancePct = totalCount > 0 ? (compliantCount / totalCount) * 100 : 0;
+
+      return {
+        code,
+        count: totalCount,
+        totalBase,
+        totalLast,
+        compliancePct
+      };
+    });
+  }, [industries, consumption, restrictions, uniqueUsages]);
+
+
+  // --- Selected Data Calculation ---
   const selectedData = useMemo(() => {
     return selectedIds.map(id => {
       const industry = industries.find(i => i.subscriptionId === id);
@@ -78,12 +135,32 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
       if (!industry || !record) return null;
       
       const limit = getLimit(id);
-      const daily = record.dailyConsumptions.slice(startDay - 1, endDay).map((val, idx) => ({
-        day: startDay + idx,
-        usage: val,
-        limit: limit,
-        isViolation: val > limit
-      }));
+      
+      // Detailed Metrics Calculation
+      let compliantDaysCount = 0;
+      let violationDaysCount = 0;
+      let totalCompliantVol = 0;
+      let totalViolationExcessVol = 0;
+
+      const daily = record.dailyConsumptions.slice(startDay - 1, endDay).map((val, idx) => {
+        const isViolation = val > limit;
+        if (val > 0) { // Only count days with data
+             if (isViolation) {
+                 violationDaysCount++;
+                 totalViolationExcessVol += (val - limit);
+             } else {
+                 compliantDaysCount++;
+                 totalCompliantVol += val;
+             }
+        }
+
+        return {
+          day: startDay + idx,
+          usage: val,
+          limit: limit,
+          isViolation: isViolation
+        };
+      });
       
       let lastUsage = 0;
       let lastDateLabel = '';
@@ -108,7 +185,13 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
         lastUsage,
         lastDateLabel,
         daily,
-        isViolator: lastUsage > limit
+        isViolator: lastUsage > limit,
+        metrics: {
+            compliantDays: compliantDaysCount,
+            violationDays: violationDaysCount,
+            totalCompliantVol,
+            totalViolationExcessVol
+        }
       };
     }).filter((d): d is NonNullable<typeof d> => d !== null);
   }, [selectedIds, industries, consumption, restrictions, startDay, endDay]);
@@ -127,6 +210,46 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
+      {/* 1. Aggregate Cards (General View by Usage Code) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 no-print">
+        {usageAggregates.map(agg => (
+            <div key={agg.code} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-4">
+                    <div className="bg-slate-100 p-2 rounded-lg">
+                        <Flame size={20} className="text-slate-600" />
+                    </div>
+                    <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100">
+                        کد تعرفه {agg.code}
+                    </span>
+                </div>
+                
+                <div className="space-y-3">
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-500">تعداد صنایع:</span>
+                        <span className="font-bold text-slate-800">{agg.count} واحد</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-500">درصد رعایت کل:</span>
+                        <span className={`font-bold ${agg.compliancePct >= 80 ? 'text-green-600' : agg.compliancePct >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                            {agg.compliancePct.toFixed(1)}%
+                        </span>
+                    </div>
+                    
+                    <div className="pt-3 border-t border-slate-100 space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                             <span className="text-slate-400">مجموع مصرف پایه:</span>
+                             <span className="font-mono font-bold text-slate-600">{agg.totalBase.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                             <span className="text-slate-400">مجموع آخرین مصرف:</span>
+                             <span className="font-mono font-bold text-blue-600">{agg.totalLast.toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ))}
+      </div>
+
       {/* Advanced Unit Selector */}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 no-print space-y-5">
         <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5 border-b border-slate-100 pb-5">
@@ -309,7 +432,9 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
         </div>
       ) : (
         /* Single View - KPI & Chart */
-        <div className="space-y-8 animate-in slide-in-from-left duration-500">
+        <div className="space-y-6 animate-in slide-in-from-left duration-500">
+          
+          {/* Top Row Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm border-r-4 border-r-indigo-500">
               <div className="flex items-center gap-3 text-slate-500 mb-2">
@@ -344,6 +469,30 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
               </div>
               <div className="text-[10px] mt-2 opacity-70">وضعیت لحظه‌ای پایش</div>
             </div>
+          </div>
+
+          {/* Detailed Stats Row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+             <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center text-center">
+                 <div className="text-xs font-bold text-slate-400 mb-1">روزهای رعایت</div>
+                 <div className="text-2xl font-black text-green-600">{single!.metrics.compliantDays}</div>
+                 <div className="text-[10px] text-slate-400 mt-1">روز</div>
+             </div>
+             <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center text-center">
+                 <div className="text-xs font-bold text-slate-400 mb-1">روزهای تخطی</div>
+                 <div className="text-2xl font-black text-red-600">{single!.metrics.violationDays}</div>
+                 <div className="text-[10px] text-slate-400 mt-1">روز</div>
+             </div>
+             <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center text-center">
+                 <div className="text-xs font-bold text-slate-400 mb-1">مجموع رعایت مصرف</div>
+                 <div className="text-lg font-black text-green-700">{single!.metrics.totalCompliantVol.toLocaleString()}</div>
+                 <div className="text-[10px] text-slate-400 mt-1">متر مکعب (مصرف مجاز)</div>
+             </div>
+             <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center text-center bg-red-50/50">
+                 <div className="text-xs font-bold text-slate-400 mb-1">مجموع مصرف تخطی</div>
+                 <div className="text-lg font-black text-red-700">{single!.metrics.totalViolationExcessVol.toLocaleString()}</div>
+                 <div className="text-[10px] text-slate-400 mt-1">متر مکعب (حجم مازاد)</div>
+             </div>
           </div>
 
           <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
