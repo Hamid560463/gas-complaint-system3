@@ -1,0 +1,5 @@
+{
+  "name": "Industrial Gas Consumption Monitoring System",
+  "description": "A comprehensive local application for monitoring industrial gas consumption and restrictions across various industrial sectors in a province, featuring detailed reporting and dashboard analytics.",
+  "requestFramePermissions": []
+}
