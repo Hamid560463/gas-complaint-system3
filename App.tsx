@@ -6,7 +6,8 @@ import Dashboard from './components/Dashboard';
 import DataManagement from './components/DataManagement';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
-import { LayoutDashboard, FileSpreadsheet, Settings as SettingsIcon, BarChart3, Copyright, Printer } from 'lucide-react';
+import ExecutionReports from './components/ExecutionReports';
+import { LayoutDashboard, FileSpreadsheet, Settings as SettingsIcon, BarChart3, Copyright, Printer, ClipboardList } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('DASHBOARD');
@@ -47,6 +48,7 @@ const App: React.FC = () => {
         />;
       case 'DATA_ENTRY': return <DataManagement industries={industries} setIndustries={setIndustries} consumption={consumptionRecords} setConsumption={setConsumptionRecords} />;
       case 'REPORTS': return <Reports industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
+      case 'EXECUTION_REPORTS': return <ExecutionReports industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
       case 'SETTINGS': return <Settings restrictions={restrictions} setRestrictions={setRestrictions} industries={industries} />;
       default: return <Dashboard industries={industries} consumption={consumptionRecords} restrictions={restrictions} selectedIds={selectedIds} onSelectIds={setSelectedIds} />;
     }
@@ -90,6 +92,13 @@ const App: React.FC = () => {
             <span className="font-bold">تنظیمات محدودیت</span>
           </button>
           <button
+            onClick={() => setCurrentView('EXECUTION_REPORTS')}
+            className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all duration-300 ${currentView === 'EXECUTION_REPORTS' ? 'bg-indigo-600 shadow-lg shadow-indigo-500/30' : 'hover:bg-slate-800'}`}
+          >
+            <ClipboardList size={20} />
+            <span className="font-bold">گزارشات اجرای پایش</span>
+          </button>
+          <button
             onClick={() => setCurrentView('REPORTS')}
             className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all duration-300 ${currentView === 'REPORTS' ? 'bg-indigo-600 shadow-lg shadow-indigo-500/30' : 'hover:bg-slate-800'}`}
           >
@@ -111,6 +120,7 @@ const App: React.FC = () => {
                 {currentView === 'DASHBOARD' && 'تحلیل وضعیت مصرف'}
                 {currentView === 'DATA_ENTRY' && 'بانک اطلاعات مرکزی'}
                 {currentView === 'SETTINGS' && 'پیکربندی سقف مصرف'}
+                {currentView === 'EXECUTION_REPORTS' && 'گزارشات اجرایی و تخلفات'}
                 {currentView === 'REPORTS' && 'خروجی رسمی و گزارشات'}
               </h2>
               <div className="flex items-center gap-2 mt-2">
