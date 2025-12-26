@@ -23,7 +23,7 @@ export interface Restriction {
   percentage: number; // 0 to 100
 }
 
-export type ViewType = 'DASHBOARD' | 'DATA_ENTRY' | 'REPORTS' | 'SETTINGS' | 'EXECUTION_REPORTS' | 'HEADQUARTERS_REPORTS';
+export type ViewType = 'DASHBOARD' | 'DATA_ENTRY' | 'REPORTS' | 'SETTINGS' | 'EXECUTION_REPORTS' | 'HEADQUARTERS_REPORTS' | 'TARIFF_HISTORY';
 
 export interface DashboardState {
   selectedIds: string[];

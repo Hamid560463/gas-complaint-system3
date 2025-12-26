@@ -116,17 +116,17 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
-      <div className="bg-indigo-900 text-white p-6 rounded-3xl shadow-lg flex items-center justify-between">
+      <div className="bg-indigo-900 text-white p-8 rounded-3xl shadow-lg flex items-center justify-between">
          <div>
-            <h2 className="text-2xl font-black flex items-center gap-3">
-               <Building2 className="text-indigo-300" />
+            <h2 className="text-3xl font-black flex items-center gap-4">
+               <Building2 className="text-indigo-300" size={32} />
                گزارشات ستاد (فرمت شرکت ملی گاز)
             </h2>
-            <p className="text-indigo-200 mt-2 text-sm">
+            <p className="text-indigo-200 mt-3 text-base">
                تولید فایل اکسل استاندارد جهت ارسال به ستاد مرکزی با فرمت مشخص (نام استان، شهر، نام صنعت، اشتراک، تاریخ، میزان محدودیت)
             </p>
          </div>
-         <FileSpreadsheet size={48} className="text-indigo-400 opacity-50" />
+         <FileSpreadsheet size={64} className="text-indigo-400 opacity-50" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -141,7 +141,7 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
               <div className="relative">
                 <input 
                   type="number" 
-                  className="w-full p-3 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-lg ltr text-center"
+                  className="w-full p-3.5 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-lg ltr text-center"
                   value={minViolationPct}
                   onChange={e => setMinViolationPct(Number(e.target.value))}
                   placeholder="0"
@@ -161,13 +161,13 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
         </div>
 
         {/* Configuration for Action Logic */}
-        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
-            <h4 className="font-bold flex items-center gap-2 text-slate-800 mb-4 pb-2 border-b text-xs">
-               <Settings2 size={16} /> معیار تعیین "قطع کامل" یا "درصد"
+        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+            <h4 className="font-bold flex items-center gap-2 text-slate-800 mb-4 pb-2 border-b text-sm">
+               <Settings2 size={18} /> معیار تعیین "قطع کامل" یا "درصد"
             </h4>
              <div className="space-y-4">
                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1 text-orange-700">
+                  <div className="flex justify-between text-sm font-bold mb-1 text-orange-700">
                      <span>حد قطع گاز (بالای این مقدار = قطع کامل)</span>
                      <span>{pressureLimit}%</span>
                   </div>
@@ -181,7 +181,7 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
                     }}
                     className="w-full h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
                   />
-                  <p className="text-[10px] text-slate-500 mt-2 text-justify">
+                  <p className="text-xs text-slate-500 mt-2 text-justify leading-5">
                     در گزارش اکسل، برای واحدهایی که درصد تخطی آن‌ها بیش از <strong>{pressureLimit}٪</strong> باشد، عبارت <strong>"قطع کامل"</strong> و برای کمتر از آن، عدد درصد درج می‌شود.
                   </p>
                </div>
@@ -190,35 +190,35 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
-        <div className="p-4 bg-slate-100 border-b font-bold text-slate-700 flex justify-between">
-            <span>پیش‌نمایش لیست ارسالی</span>
-            <span className="bg-white px-2 rounded text-xs flex items-center border">{reportData.length} مورد</span>
+        <div className="p-5 bg-slate-100 border-b font-bold text-slate-700 flex justify-between items-center">
+            <span className="text-lg">پیش‌نمایش لیست ارسالی</span>
+            <span className="bg-white px-3 py-1 rounded text-sm flex items-center border border-slate-300">{reportData.length} مورد</span>
         </div>
         <div className="overflow-x-auto">
-             <table className="w-full text-sm text-right">
+             <table className="w-full text-base text-right">
               <thead className="bg-indigo-900 text-white">
                 <tr>
-                   <th className="p-3">نام استان</th>
-                   <th className="p-3">شهر</th>
-                   <th className="p-3">نام صنعت</th>
-                   <th className="p-3">شماره اشتراک</th>
-                   <th className="p-3">تاریخ اعمال</th>
-                   <th className="p-3">میزان محدودیت (خروجی)</th>
-                   <th className="p-3 opacity-50 text-xs">درصد واقعی</th>
+                   <th className="p-4">نام استان</th>
+                   <th className="p-4">شهر</th>
+                   <th className="p-4">نام صنعت</th>
+                   <th className="p-4">شماره اشتراک</th>
+                   <th className="p-4">تاریخ اعمال</th>
+                   <th className="p-4">میزان محدودیت (خروجی)</th>
+                   <th className="p-4 opacity-70 text-sm">درصد واقعی</th>
                 </tr>
               </thead>
               <tbody>
                 {reportData.map((row, idx) => (
                     <tr key={idx} className="border-b hover:bg-slate-50">
-                        <td className="p-3">یزد</td>
-                        <td className="p-3">{row!.city}</td>
-                        <td className="p-3 font-bold">{row!.name}</td>
-                        <td className="p-3 font-mono">{row!.subscriptionId}</td>
-                        <td className="p-3">{new Date().toLocaleDateString('fa-IR')}</td>
-                        <td className="p-3 font-bold text-indigo-700">
+                        <td className="p-4">یزد</td>
+                        <td className="p-4">{row!.city}</td>
+                        <td className="p-4 font-bold text-slate-800">{row!.name}</td>
+                        <td className="p-4 font-mono text-slate-600">{row!.subscriptionId}</td>
+                        <td className="p-4">{new Date().toLocaleDateString('fa-IR')}</td>
+                        <td className="p-4 font-bold text-indigo-700">
                             {row!.action === 'قطع گاز' ? 'قطع کامل' : `${row!.violationPct.toFixed(1)}٪`}
                         </td>
-                         <td className="p-3 text-slate-400 font-mono text-xs">
+                         <td className="p-4 text-slate-400 font-mono text-sm">
                             {row!.violationPct.toFixed(1)}%
                         </td>
                     </tr>

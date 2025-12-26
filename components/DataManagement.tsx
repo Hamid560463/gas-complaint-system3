@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { Industry, ConsumptionRecord } from '../types';
 import * as XLSX from 'xlsx';
-import { FolderOpen, Edit, XCircle, CheckCircle, Trash2 } from 'lucide-react';
+import { FolderOpen, Edit, XCircle, CheckCircle, Trash2, UploadCloud, Database, FileText, Eye, AlertCircle } from 'lucide-react';
+import { Button, Input, Card, CardContent, CardHeader, CardTitle, Table, TableHeader, TableRow, TableHead, TableCell } from './ui/Base';
 
 interface DataManagementProps {
   industries: Industry[];
@@ -15,8 +16,11 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
   const [activeTab, setActiveTab] = useState<'MASTER' | 'CONSUMPTION'>('MASTER');
   const [manualIndustry, setManualIndustry] = useState<Partial<Industry>>({});
   const [isEditing, setIsEditing] = useState(false);
+  
+  // Preview State
+  const [previewData, setPreviewData] = useState<any[] | null>(null);
+  const [previewType, setPreviewType] = useState<'MASTER' | 'CONSUMPTION' | null>(null);
 
-  // Helper function to map usage codes to descriptive names
   const mapUsageCode = (rawCode: string) => {
     const c = rawCode.trim();
     switch(c) {
@@ -35,21 +39,12 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
       alert('لطفاً نام و شماره اشتراک را وارد کنید.');
       return;
     }
-
     if (isEditing) {
-      // Update existing
-      setIndustries(prev => prev.map(item => 
-        item.subscriptionId === manualIndustry.subscriptionId 
-          ? manualIndustry as Industry 
-          : item
-      ));
-      alert('اطلاعات با موفقیت ویرایش شد.');
+      setIndustries(prev => prev.map(item => item.subscriptionId === manualIndustry.subscriptionId ? manualIndustry as Industry : item));
       setIsEditing(false);
     } else {
-      // Add new
-      const exists = industries.some(i => i.subscriptionId === manualIndustry.subscriptionId);
-      if (exists) {
-        alert('این شماره اشتراک قبلاً ثبت شده است. لطفاً از دکمه ویرایش در جدول استفاده کنید.');
+      if (industries.some(i => i.subscriptionId === manualIndustry.subscriptionId)) {
+        alert('این شماره اشتراک قبلاً ثبت شده است.');
         return;
       }
       setIndustries([...industries, manualIndustry as Industry]);
@@ -60,29 +55,20 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
   const handleEdit = (industry: Industry) => {
     setManualIndustry(industry);
     setIsEditing(true);
-    // Smooth scroll to top to show the form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleCancelEdit = () => {
-    setManualIndustry({});
-    setIsEditing(false);
-  };
-
+  const handleCancelEdit = () => { setManualIndustry({}); setIsEditing(false); };
+  
   const handleOpenDataFolder = () => {
-    if (window.electronAPI && window.electronAPI.openDataFolder) {
-      window.electronAPI.openDataFolder();
-    } else {
-      alert('این قابلیت فقط در نسخه دسکتاپ (EXE) فعال است.');
-    }
+    if (window.electronAPI && window.electronAPI.openDataFolder) window.electronAPI.openDataFolder();
+    else alert('این قابلیت فقط در نسخه دسکتاپ (EXE) فعال است.');
   };
 
   const compareDates = (date1: string, date2: string) => {
     const p1 = date1.split('/').map(Number);
     const p2 = date2.split('/').map(Number);
-    // Fallback for non-standard formats
     if (p1.length !== 3 || p2.length !== 3) return date1.localeCompare(date2);
-    
     if (p1[0] !== p2[0]) return p1[0] - p2[0];
     if (p1[1] !== p2[1]) return p1[1] - p2[1];
     return p1[2] - p2[2];
@@ -98,322 +84,239 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
       if (!arrayBuffer) return;
 
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
       if (type === 'MASTER') {
-        const newIndustries: Industry[] = jsonData.map((row: any) => ({
+        const newIndustries = jsonData.map((row: any) => ({
           subscriptionId: String(row['شماره اشتراک'] || row['subscriptionId'] || ''),
           name: row['ایستگاه'] || row['name'] || '',
           city: row['شهر'] || row['city'] || '',
-          usageCode: mapUsageCode(String(row['کد مصرف'] || row['usageCode'] || '')), // Applied mapping here
+          usageCode: mapUsageCode(String(row['کد مصرف'] || row['usageCode'] || '')),
           stationCapacity: Number(row['ظرفیت ایستگاه'] || row['stationCapacity'] || 0),
           address: row['آدرس'] || row['address'] || (row['شهر'] || ''),
           phone: String(row['موبایل'] || row['phone'] || ''),
           baseMonthAvg: Number(row['متوسط مصرف روزانه آبان'] || row['baseMonthAvg'] || 0)
         })).filter(i => i.subscriptionId && i.name);
-
-        if (newIndustries.length > 0) {
-          const merged = [...industries];
-          newIndustries.forEach(newItem => {
-            const index = merged.findIndex(i => i.subscriptionId === newItem.subscriptionId);
-            if (index > -1) {
-              merged[index] = newItem;
-            } else {
-              merged.push(newItem);
-            }
-          });
-          setIndustries(merged);
-          alert(`${newIndustries.length} ردیف با موفقیت پردازش و به لیست افزوده شد.`);
-        } else {
-          alert('هیچ داده معتبری یافت نشد. لطفاً از صحت نام ستون‌ها اطمینان حاصل کنید.');
-        }
-      } else if (type === 'CONSUMPTION') {
-        const newRecords: ConsumptionRecord[] = jsonData.map((row: any) => {
+        setPreviewData(newIndustries);
+        setPreviewType('MASTER');
+      } else {
+        const newRecords = jsonData.map((row: any) => {
             const subId = String(row['شماره اشتراک'] || row['subscriptionId'] || '');
-            
-            // Initialize array with zeros for 31 days
             const dailyData: number[] = new Array(31).fill(0);
             let maxDate = '';
-
-            // Iterate over all keys in the row to find date-like columns
             Object.keys(row).forEach(key => {
               let dayIndex = -1;
-
-              // Try parsing key as pure number
-              if (!isNaN(Number(key)) && Number(key) >= 1 && Number(key) <= 31) {
-                dayIndex = Number(key);
-              } 
-              // Try parsing date string (look for /)
+              if (!isNaN(Number(key)) && Number(key) >= 1 && Number(key) <= 31) dayIndex = Number(key);
               else if (key.includes('/')) {
                 const parts = key.split('/');
-                const lastPart = parts[parts.length - 1];
-                const parsedDay = parseInt(lastPart, 10);
+                const parsedDay = parseInt(parts[parts.length - 1], 10);
                 if (!isNaN(parsedDay) && parsedDay >= 1 && parsedDay <= 31) {
                   dayIndex = parsedDay;
-                  
-                  // Check if this is the latest date
-                  if (!maxDate || compareDates(key, maxDate) > 0) {
-                    maxDate = key;
-                  }
+                  if (!maxDate || compareDates(key, maxDate) > 0) maxDate = key;
                 }
               }
-
               if (dayIndex !== -1) {
                 let rawVal = row[key];
-                // Clean value: replace / with . for decimals if string (e.g. 17592/4 -> 17592.4)
-                if (typeof rawVal === 'string') {
-                  rawVal = rawVal.replace('/', '.').replace(/,/g, '');
-                }
+                if (typeof rawVal === 'string') rawVal = rawVal.replace('/', '.').replace(/,/g, '');
                 const numVal = Number(rawVal);
-                if (!isNaN(numVal)) {
-                  dailyData[dayIndex - 1] = numVal;
-                }
+                if (!isNaN(numVal)) dailyData[dayIndex - 1] = numVal;
               }
             });
-            
             return {
                 subscriptionId: subId,
                 source: 'File',
                 baseMonthAvg: 0,
                 dailyConsumptions: dailyData,
                 lastRecordDate: maxDate
-            } as ConsumptionRecord;
+            };
         }).filter(r => r.subscriptionId && r.dailyConsumptions.some(d => d > 0 || d === 0)); 
-
-        if (newRecords.length > 0) {
-             // Merge with existing records
-             const merged = [...consumption];
-             newRecords.forEach(newItem => {
-               const index = merged.findIndex(c => c.subscriptionId === newItem.subscriptionId);
-               if (index > -1) {
-                 // Update existing
-                 merged[index] = { 
-                   ...merged[index], 
-                   dailyConsumptions: newItem.dailyConsumptions, 
-                   source: 'File',
-                   lastRecordDate: newItem.lastRecordDate 
-                 };
-               } else {
-                 merged.push(newItem);
-               }
-             });
-             setConsumption(merged);
-             alert(`${newRecords.length} رکورد مصرف با موفقیت بارگذاری شد.`);
-        } else {
-          alert('داده‌ای یافت نشد. لطفا مطمئن شوید ستون "شماره اشتراک" و ستون‌های تاریخ (مثل 1404/09/01) وجود دارند.');
-        }
+        setPreviewData(newRecords);
+        setPreviewType('CONSUMPTION');
       }
+      e.target.value = ''; // Reset input
     };
     reader.readAsArrayBuffer(file);
   };
 
+  const commitPreview = () => {
+      if (!previewData || !previewType) return;
+      
+      if (previewType === 'MASTER') {
+          const merged = [...industries];
+          previewData.forEach((newItem: Industry) => {
+            const index = merged.findIndex(i => i.subscriptionId === newItem.subscriptionId);
+            if (index > -1) merged[index] = newItem; else merged.push(newItem);
+          });
+          setIndustries(merged);
+          alert(`${previewData.length} ردیف اضافه شد.`);
+      } else {
+          const merged = [...consumption];
+          previewData.forEach((newItem: ConsumptionRecord) => {
+            const index = merged.findIndex(c => c.subscriptionId === newItem.subscriptionId);
+            if (index > -1) merged[index] = { ...merged[index], dailyConsumptions: newItem.dailyConsumptions, source: 'File', lastRecordDate: newItem.lastRecordDate };
+            else merged.push(newItem);
+          });
+          setConsumption(merged);
+          alert(`${previewData.length} رکورد مصرف بروزرسانی شد.`);
+      }
+      setPreviewData(null);
+      setPreviewType(null);
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-end border-b pb-1 gap-4">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('MASTER')}
-            className={`px-6 py-2 ${activeTab === 'MASTER' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-slate-500'}`}
-          >
-            بانک اطلاعات پایه (صنایع)
-          </button>
-          <button
-            onClick={() => setActiveTab('CONSUMPTION')}
-            className={`px-6 py-2 ${activeTab === 'CONSUMPTION' ? 'border-b-2 border-blue-600 text-blue-600 font-bold' : 'text-slate-500'}`}
-          >
-            داده‌های مصرف روزانه
-          </button>
+    <div className="space-y-6 relative">
+      {/* Preview Modal */}
+      {previewData && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <Card className="w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95">
+                  <CardHeader className="border-b bg-slate-50 flex flex-row justify-between items-center">
+                      <CardTitle className="flex items-center gap-2">
+                          <Eye className="text-blue-600"/>
+                          پیش‌نمایش داده‌های وارد شده ({previewData.length} مورد)
+                      </CardTitle>
+                      <Button variant="ghost" size="sm" onClick={() => setPreviewData(null)}><XCircle size={20}/></Button>
+                  </CardHeader>
+                  <CardContent className="flex-1 overflow-auto p-0">
+                      <div className="p-4 bg-yellow-50 border-b border-yellow-100 flex items-center gap-2 text-yellow-800 text-sm">
+                          <AlertCircle size={16}/>
+                          لطفاً داده‌ها را بررسی کنید. در صورت تایید، دکمه "ثبت نهایی" را بزنید.
+                      </div>
+                      <Table>
+                          <TableHeader>
+                              <TableRow>
+                                  <TableHead>اشتراک</TableHead>
+                                  {previewType === 'MASTER' ? (
+                                      <>
+                                          <TableHead>نام</TableHead>
+                                          <TableHead>تعرفه</TableHead>
+                                          <TableHead>ظرفیت</TableHead>
+                                      </>
+                                  ) : (
+                                      <>
+                                          <TableHead>آخرین تاریخ</TableHead>
+                                          <TableHead>تعداد روز</TableHead>
+                                      </>
+                                  )}
+                              </TableRow>
+                          </TableHeader>
+                          <tbody>
+                              {previewData.slice(0, 50).map((row, idx) => (
+                                  <TableRow key={idx}>
+                                      <TableCell>{row.subscriptionId}</TableCell>
+                                      {previewType === 'MASTER' ? (
+                                          <>
+                                              <TableCell>{row.name}</TableCell>
+                                              <TableCell>{row.usageCode}</TableCell>
+                                              <TableCell>{row.stationCapacity}</TableCell>
+                                          </>
+                                      ) : (
+                                          <>
+                                              <TableCell>{row.lastRecordDate || '-'}</TableCell>
+                                              <TableCell>{row.dailyConsumptions.filter((v: number) => v > 0).length}</TableCell>
+                                          </>
+                                      )}
+                                  </TableRow>
+                              ))}
+                              {previewData.length > 50 && <TableRow><TableCell colSpan={4} className="text-center text-slate-400">... و {previewData.length - 50} مورد دیگر</TableCell></TableRow>}
+                          </tbody>
+                      </Table>
+                  </CardContent>
+                  <div className="p-4 border-t flex justify-end gap-3 bg-slate-50">
+                      <Button variant="outline" onClick={() => setPreviewData(null)}>لغو</Button>
+                      <Button onClick={commitPreview} className="bg-green-600 hover:bg-green-700">ثبت نهایی و ذخیره</Button>
+                  </div>
+              </Card>
+          </div>
+      )}
+
+      <div className="flex justify-between items-center pb-4 border-b">
+        <div className="flex bg-slate-100 p-1 rounded-lg">
+          <button onClick={() => setActiveTab('MASTER')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'MASTER' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>اطلاعات پایه صنایع</button>
+          <button onClick={() => setActiveTab('CONSUMPTION')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'CONSUMPTION' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>داده‌های مصرف روزانه</button>
         </div>
-        
-        {/* New Button for Local Data Folder */}
-        <button 
-          onClick={handleOpenDataFolder}
-          className="flex items-center gap-2 text-xs bg-slate-100 text-slate-600 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors mb-2"
-          title="مشاهده محل ذخیره فایل‌های دیتابیس روی کامپیوتر"
-        >
-          <FolderOpen size={16} />
-          <span>باز کردن پوشه ذخیره فایل‌ها</span>
-        </button>
+        <Button variant="outline" size="sm" onClick={handleOpenDataFolder} className="gap-2"><FolderOpen size={14} /> باز کردن پوشه دیتا</Button>
       </div>
 
       {activeTab === 'MASTER' ? (
-        <div className="space-y-6">
-          <div className={`p-6 rounded-lg border transition-colors ${isEditing ? 'bg-yellow-50 border-yellow-200' : 'bg-slate-50 border-slate-200'}`}>
-            <h3 className="font-bold mb-4 flex items-center gap-2">
-              {isEditing ? <Edit size={20} className="text-yellow-600"/> : null}
-              {isEditing ? 'ویرایش اطلاعات صنعت' : 'ورود دستی اطلاعات پایه صنعت'}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <input 
-                type="text" placeholder="نام ایستگاه / شرکت" 
-                className="p-2 border rounded"
-                value={manualIndustry.name || ''}
-                onChange={e => setManualIndustry({...manualIndustry, name: e.target.value})}
-              />
-              <input 
-                type="text" placeholder="شماره اشتراک" 
-                className={`p-2 border rounded ${isEditing ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : ''}`}
-                value={manualIndustry.subscriptionId || ''}
-                onChange={e => setManualIndustry({...manualIndustry, subscriptionId: e.target.value})}
-                disabled={isEditing}
-                title={isEditing ? 'شماره اشتراک در حالت ویرایش قابل تغییر نیست' : ''}
-              />
-               <input 
-                type="text" placeholder="کد مصرف (مثال: 7)" 
-                className="p-2 border rounded"
-                value={manualIndustry.usageCode || ''}
-                onChange={e => setManualIndustry({...manualIndustry, usageCode: e.target.value})}
-              />
-              <input 
-                type="text" placeholder="شهر" 
-                className="p-2 border rounded"
-                value={manualIndustry.city || ''}
-                onChange={e => setManualIndustry({...manualIndustry, city: e.target.value})}
-              />
-              <input 
-                type="number" placeholder="ظرفیت ایستگاه" 
-                className="p-2 border rounded"
-                value={manualIndustry.stationCapacity || ''}
-                onChange={e => setManualIndustry({...manualIndustry, stationCapacity: Number(e.target.value)})}
-              />
-              <input 
-                type="text" placeholder="موبایل" 
-                className="p-2 border rounded"
-                value={manualIndustry.phone || ''}
-                onChange={e => setManualIndustry({...manualIndustry, phone: e.target.value})}
-              />
-              <input 
-                type="number" placeholder="متوسط مصرف روزانه آبان" 
-                className="p-2 border rounded col-span-2 bg-yellow-50 border-yellow-200"
-                value={manualIndustry.baseMonthAvg || ''}
-                onChange={e => setManualIndustry({...manualIndustry, baseMonthAvg: Number(e.target.value)})}
-              />
-              
-              {isEditing ? (
-                <div className="col-span-4 flex gap-2">
-                  <button 
-                    onClick={handleSaveIndustry}
-                    className="flex-1 bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 flex items-center justify-center gap-2 font-bold"
-                  >
-                    <CheckCircle size={18} />
-                    ثبت تغییرات
-                  </button>
-                  <button 
-                    onClick={handleCancelEdit}
-                    className="flex-1 bg-slate-500 text-white px-4 py-2 rounded hover:bg-slate-600 flex items-center justify-center gap-2"
-                  >
-                    <XCircle size={18} />
-                    انصراف
-                  </button>
-                </div>
-              ) : (
-                <button 
-                  onClick={handleSaveIndustry}
-                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 col-span-4 mt-2 font-bold"
-                >
-                  افزودن به لیست
-                </button>
-              )}
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <Card className={`${isEditing ? 'border-amber-200 bg-amber-50/30' : ''}`}>
+            <CardHeader>
+               <CardTitle className="flex items-center gap-2 text-base">
+                 {isEditing ? <Edit size={18} className="text-amber-600"/> : <Database size={18} className="text-blue-600"/>}
+                 {isEditing ? 'ویرایش اطلاعات صنعت' : 'ورود دستی اطلاعات جدید'}
+               </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Input placeholder="نام ایستگاه / شرکت" value={manualIndustry.name || ''} onChange={e => setManualIndustry({...manualIndustry, name: e.target.value})} />
+                <Input placeholder="شماره اشتراک" disabled={isEditing} value={manualIndustry.subscriptionId || ''} onChange={e => setManualIndustry({...manualIndustry, subscriptionId: e.target.value})} />
+                <Input placeholder="کد مصرف (مثال: 7)" value={manualIndustry.usageCode || ''} onChange={e => setManualIndustry({...manualIndustry, usageCode: e.target.value})} />
+                <Input placeholder="شهر" value={manualIndustry.city || ''} onChange={e => setManualIndustry({...manualIndustry, city: e.target.value})} />
+                <Input type="number" placeholder="ظرفیت ایستگاه" value={manualIndustry.stationCapacity || ''} onChange={e => setManualIndustry({...manualIndustry, stationCapacity: Number(e.target.value)})} />
+                <Input placeholder="موبایل" value={manualIndustry.phone || ''} onChange={e => setManualIndustry({...manualIndustry, phone: e.target.value})} />
+                <Input type="number" placeholder="متوسط مصرف روزانه آبان" className="col-span-2 border-blue-200 bg-blue-50/50" value={manualIndustry.baseMonthAvg || ''} onChange={e => setManualIndustry({...manualIndustry, baseMonthAvg: Number(e.target.value)})} />
+                {isEditing ? (
+                  <div className="col-span-4 flex gap-2">
+                    <Button onClick={handleSaveIndustry} className="flex-1 gap-2 bg-amber-600 hover:bg-amber-700"><CheckCircle size={16} /> ثبت تغییرات</Button>
+                    <Button variant="outline" onClick={handleCancelEdit} className="flex-1 gap-2"><XCircle size={16} /> انصراف</Button>
+                  </div>
+                ) : <Button onClick={handleSaveIndustry} className="col-span-4 mt-2">افزودن به لیست</Button>}
+              </div>
+            </CardContent>
+          </Card>
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-lg">لیست صنایع ({industries.length})</h3>
+            <div className="relative">
+              <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".xlsx, .xls" onChange={e => handleFileUpload('MASTER', e)} />
+              <Button variant="secondary" className="gap-2 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"><UploadCloud size={16} /> بارگذاری اکسل</Button>
             </div>
           </div>
-
-          <div className="flex justify-between items-center">
-            <h3 className="font-bold">لیست صنایع ({industries.length})</h3>
-            <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-              بارگذاری اکسل پایه
-              <input type="file" className="hidden" accept=".xlsx, .xls" onChange={e => handleFileUpload('MASTER', e)} />
-            </label>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-right bg-white rounded-lg border">
-              <thead className="bg-slate-100 border-b font-bold text-slate-700">
-                <tr>
-                  <th className="p-3">ایستگاه</th>
-                  <th className="p-3">شماره اشتراک</th>
-                  <th className="p-3">کد مصرف</th>
-                  <th className="p-3">شهر</th>
-                  <th className="p-3">ظرفیت ایستگاه</th>
-                  <th className="p-3">موبایل</th>
-                  <th className="p-3 bg-yellow-100">متوسط مصرف آبان</th>
-                  <th className="p-3">عملیات</th>
-                </tr>
-              </thead>
+          <Card>
+            <Table>
+              <TableHeader><TableRow><TableHead>ایستگاه</TableHead><TableHead>شماره اشتراک</TableHead><TableHead>کد مصرف</TableHead><TableHead>شهر</TableHead><TableHead>ظرفیت</TableHead><TableHead>موبایل</TableHead><TableHead className="bg-amber-50/50">متوسط آبان</TableHead><TableHead>عملیات</TableHead></TableRow></TableHeader>
               <tbody>
                 {industries.map(ind => (
-                  <tr key={ind.subscriptionId} className={`border-b hover:bg-slate-50 ${isEditing && manualIndustry.subscriptionId === ind.subscriptionId ? 'bg-yellow-50' : ''}`}>
-                    <td className="p-3 font-bold">{ind.name}</td>
-                    <td className="p-3">{ind.subscriptionId}</td>
-                    <td className="p-3">{ind.usageCode}</td>
-                    <td className="p-3">{ind.city}</td>
-                    <td className="p-3">{ind.stationCapacity.toLocaleString()}</td>
-                    <td className="p-3">{ind.phone}</td>
-                    <td className="p-3 bg-yellow-50 font-bold">{ind.baseMonthAvg ? ind.baseMonthAvg.toLocaleString() : '-'}</td>
-                    <td className="p-3">
-                      <div className="flex gap-3">
-                        <button 
-                          onClick={() => handleEdit(ind)}
-                          className="text-blue-500 hover:text-blue-700 flex items-center gap-1"
-                          title="ویرایش"
-                        >
-                          <Edit size={16} />
-                          <span className="hidden md:inline">ویرایش</span>
-                        </button>
-                        <button 
-                          onClick={() => {
-                            if (window.confirm('آیا از حذف این مورد اطمینان دارید؟')) {
-                                setIndustries(industries.filter(i => i.subscriptionId !== ind.subscriptionId));
-                                if (isEditing && manualIndustry.subscriptionId === ind.subscriptionId) {
-                                  handleCancelEdit();
-                                }
-                            }
-                          }}
-                          className="text-red-500 hover:text-red-700 flex items-center gap-1"
-                          title="حذف"
-                        >
-                          <Trash2 size={16} />
-                          <span className="hidden md:inline">حذف</span>
-                        </button>
+                  <TableRow key={ind.subscriptionId} className={isEditing && manualIndustry.subscriptionId === ind.subscriptionId ? 'bg-amber-50' : ''}>
+                    <TableCell className="font-medium">{ind.name}</TableCell>
+                    <TableCell>{ind.subscriptionId}</TableCell>
+                    <TableCell>{ind.usageCode}</TableCell>
+                    <TableCell>{ind.city}</TableCell>
+                    <TableCell>{ind.stationCapacity.toLocaleString()}</TableCell>
+                    <TableCell>{ind.phone}</TableCell>
+                    <TableCell className="bg-amber-50/30 font-bold">{ind.baseMonthAvg ? ind.baseMonthAvg.toLocaleString() : '-'}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => handleEdit(ind)} className="h-8 w-8 p-0 text-blue-600"><Edit size={14} /></Button>
+                        <Button variant="ghost" size="sm" onClick={() => { if (window.confirm('حذف شود؟')) { setIndustries(industries.filter(i => i.subscriptionId !== ind.subscriptionId)); if (isEditing && manualIndustry.subscriptionId === ind.subscriptionId) handleCancelEdit(); } }} className="h-8 w-8 p-0 text-red-500"><Trash2 size={14} /></Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
               </tbody>
-            </table>
-          </div>
+            </Table>
+          </Card>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
           <div className="flex justify-between items-center">
-            <h3 className="font-bold">پایش مصرف روزانه</h3>
-            <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-              بارگذاری فایل اکسل مصرف
-              <input type="file" className="hidden" accept=".xlsx, .xls" onChange={e => handleFileUpload('CONSUMPTION', e)} />
-            </label>
+            <h3 className="font-bold flex items-center gap-2"><FileText size={20} className="text-blue-600" /> لیست مصارف ثبت شده</h3>
+            <div className="relative">
+              <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".xlsx, .xls" onChange={e => handleFileUpload('CONSUMPTION', e)} />
+              <Button variant="secondary" className="gap-2 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"><UploadCloud size={16} /> بارگذاری اکسل مصرف</Button>
+            </div>
           </div>
-
-          <div className="overflow-x-auto">
-             <table className="w-full text-sm text-right">
-              <thead className="bg-slate-100 border-b">
-                <tr>
-                  <th className="p-3">اشتراک</th>
-                  <th className="p-3">مرجع</th>
-                  <th className="p-3">روزهای ثبت شده</th>
-                  <th className="p-3">آخرین تاریخ</th>
-                  <th className="p-3">آخرین مصرف</th>
-                </tr>
-              </thead>
+          <Card>
+             <Table>
+              <TableHeader><TableRow><TableHead>اشتراک</TableHead><TableHead>مرجع</TableHead><TableHead>روزهای ثبت شده</TableHead><TableHead>آخرین تاریخ</TableHead><TableHead>آخرین مصرف</TableHead></TableRow></TableHeader>
               <tbody>
                 {consumption.map(cons => (
-                  <tr key={cons.subscriptionId} className="border-b">
-                    <td className="p-3">{cons.subscriptionId}</td>
-                    <td className="p-3">{cons.source}</td>
-                    <td className="p-3">{cons.dailyConsumptions.filter(v => v > 0).length} روز</td>
-                    <td className="p-3 text-slate-500 text-xs" dir="ltr">{cons.lastRecordDate || '-'}</td>
-                    <td className="p-3 text-blue-600 font-bold">
+                  <TableRow key={cons.subscriptionId}>
+                    <TableCell className="font-mono">{cons.subscriptionId}</TableCell>
+                    <TableCell>{cons.source}</TableCell>
+                    <TableCell>{cons.dailyConsumptions.filter(v => v > 0).length} روز</TableCell>
+                    <TableCell className="text-xs text-slate-500" dir="ltr">{cons.lastRecordDate || '-'}</TableCell>
+                    <TableCell className="font-bold text-blue-600 font-mono">
                        {(() => {
                          if (cons.lastRecordDate) {
                            const parts = cons.lastRecordDate.split('/');
@@ -422,18 +325,12 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                          }
                          return cons.dailyConsumptions.reduce((last, curr) => curr > 0 ? curr : last, 0).toLocaleString();
                        })()}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
               </tbody>
-            </table>
-          </div>
-          <div className="p-4 bg-orange-50 border border-orange-200 rounded text-orange-800 text-sm leading-7">
-            <strong>نکات فایل اکسل مصرف:</strong><br/>
-            ۱. ستون اول باید <code>شماره اشتراک</code> باشد.<br/>
-            ۲. سرستون‌های تاریخ باید شامل روز باشند (مثال: <code>1404/09/25</code> یا <code>25</code>).<br/>
-            ۳. ممیز اعداد می‌تواند <code>/</code> یا <code>.</code> باشد (مثال: <code>17592/4</code>).
-          </div>
+            </Table>
+          </Card>
         </div>
       )}
     </div>

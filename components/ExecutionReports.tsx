@@ -120,14 +120,14 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
               <div className="relative">
                 <input 
                   type="number" 
-                  className="w-full p-3 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-red-500 outline-none font-bold text-lg ltr text-center"
+                  className="w-full p-3.5 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-red-500 outline-none font-bold text-lg ltr text-center"
                   value={minViolationPct}
                   onChange={e => setMinViolationPct(Number(e.target.value))}
                   placeholder="0"
                 />
                 <span className="absolute left-4 top-3.5 text-slate-400 font-bold">%</span>
               </div>
-              <p className="text-[10px] text-slate-400 mt-2">نمایش صنایعی که بیش از این درصد تخطی داشته‌اند.</p>
+              <p className="text-xs text-slate-400 mt-2">نمایش صنایعی که بیش از این درصد تخطی داشته‌اند.</p>
             </div>
             
             <div className="flex-1 w-full">
@@ -136,7 +136,7 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
                 فیلتر نوع اقدام:
               </label>
               <select 
-                  className="w-full p-3 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm"
+                  className="w-full p-3.5 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-base"
                   value={actionFilter}
                   onChange={e => setActionFilter(e.target.value)}
               >
@@ -145,12 +145,12 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
                   <option value="اعمال افت فشار">اعمال افت فشار</option>
                   <option value="قطع گاز">قطع گاز</option>
               </select>
-              <p className="text-[10px] text-slate-400 mt-2">فیلتر لیست بر اساس اقدام پیشنهادی.</p>
+              <p className="text-xs text-slate-400 mt-2">فیلتر لیست بر اساس اقدام پیشنهادی.</p>
             </div>
 
             <button 
               onClick={exportToExcel}
-              className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 transition-all shadow-lg active:scale-95 font-bold whitespace-nowrap"
+              className="flex items-center gap-2 bg-green-600 text-white px-6 py-3.5 rounded-xl hover:bg-green-700 transition-all shadow-lg active:scale-95 font-bold whitespace-nowrap"
             >
               <Download size={20} />
               <span>دانلود اکسل داخلی</span>
@@ -196,7 +196,7 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
                     className="w-full h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
                   />
                </div>
-               <div className="text-xs bg-white p-2 rounded border text-slate-500 leading-5">
+               <div className="text-xs bg-white p-3 rounded border text-slate-500 leading-6 shadow-sm">
                   <strong>قانون فعلی:</strong><br/>
                   • ۰ تا {warningLimit}٪ : اخطار کتبی<br/>
                   • {warningLimit}٪ تا {pressureLimit}٪ : افت فشار<br/>
@@ -209,46 +209,46 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
       {/* Results Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
         <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-           <h3 className="font-black text-slate-800 flex items-center gap-2">
+           <h3 className="font-black text-slate-800 flex items-center gap-2 text-xl">
              <Gavel size={24} className="text-slate-900" />
              لیست مشمولین اعمال محدودیت (نمای داخلی)
            </h3>
-           <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold">
+           <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-sm font-bold">
              {reportData.length} واحد شناسایی شد
            </span>
         </div>
         
         {reportData.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-right">
+            <table className="w-full text-base text-right">
               <thead className="bg-slate-900 text-white">
                 <tr>
-                  <th className="p-4 font-bold">نام واحد صنعتی</th>
-                  <th className="p-4 font-bold">شماره اشتراک</th>
-                  <th className="p-4 font-bold">شهر</th>
-                  <th className="p-4 font-bold">سقف مجاز</th>
-                  <th className="p-4 font-bold">آخرین مصرف</th>
-                  <th className="p-4 font-bold text-red-300">میزان تخطی</th>
-                  <th className="p-4 font-bold text-center">اقدام پیشنهادی</th>
+                  <th className="p-5 font-bold">نام واحد صنعتی</th>
+                  <th className="p-5 font-bold">شماره اشتراک</th>
+                  <th className="p-5 font-bold">شهر</th>
+                  <th className="p-5 font-bold">سقف مجاز</th>
+                  <th className="p-5 font-bold">آخرین مصرف</th>
+                  <th className="p-5 font-bold text-red-300">میزان تخطی</th>
+                  <th className="p-5 font-bold text-center">اقدام پیشنهادی</th>
                 </tr>
               </thead>
               <tbody>
                 {reportData.map((row, index) => (
                   <tr key={index} className="border-b hover:bg-slate-50 transition-colors">
-                    <td className="p-4 font-bold text-slate-800">{row!.name}</td>
-                    <td className="p-4 font-mono text-slate-500">{row!.subscriptionId}</td>
-                    <td className="p-4 text-slate-600">{row!.city}</td>
-                    <td className="p-4 font-mono text-slate-600">{Math.floor(row!.allowed).toLocaleString()}</td>
-                    <td className="p-4 font-mono text-blue-700 font-bold">{row!.lastUsage.toLocaleString()}</td>
-                    <td className="p-4 font-mono text-red-600 font-black text-lg">
+                    <td className="p-5 font-bold text-slate-800">{row!.name}</td>
+                    <td className="p-5 font-mono text-slate-500">{row!.subscriptionId}</td>
+                    <td className="p-5 text-slate-600">{row!.city}</td>
+                    <td className="p-5 font-mono text-slate-600">{Math.floor(row!.allowed).toLocaleString()}</td>
+                    <td className="p-5 font-mono text-blue-700 font-bold">{row!.lastUsage.toLocaleString()}</td>
+                    <td className="p-5 font-mono text-red-600 font-black text-xl">
                       {row!.violationPct.toFixed(1)}%
-                      <span className="text-[10px] text-red-400 mr-1 block font-normal">({Math.floor(row!.violationAmount).toLocaleString()})</span>
+                      <span className="text-xs text-red-400 mr-1 block font-normal">({Math.floor(row!.violationAmount).toLocaleString()})</span>
                     </td>
-                    <td className="p-4 text-center">
-                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black border ${row!.actionColor.replace('text-', 'border-').replace('bg-', 'border-opacity-20 ')} ${row!.actionColor}`}>
-                        {row!.action === 'قطع گاز' && <Ban size={12} />}
-                        {row!.action === 'اعمال افت فشار' && <AlertTriangle size={12} />}
-                        {row!.action === 'اخطار کتبی' && <AlertOctagon size={12} />}
+                    <td className="p-5 text-center">
+                      <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-black border ${row!.actionColor.replace('text-', 'border-').replace('bg-', 'border-opacity-20 ')} ${row!.actionColor}`}>
+                        {row!.action === 'قطع گاز' && <Ban size={16} />}
+                        {row!.action === 'اعمال افت فشار' && <AlertTriangle size={16} />}
+                        {row!.action === 'اخطار کتبی' && <AlertOctagon size={16} />}
                         {row!.action}
                       </span>
                     </td>
@@ -258,10 +258,10 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
             </table>
           </div>
         ) : (
-          <div className="p-12 text-center flex flex-col items-center text-slate-400">
-            <AlertTriangle size={48} className="mb-4 opacity-20" />
-            <p className="font-bold text-lg">با فیلترهای اعمال شده، هیچ واحدی یافت نشد.</p>
-            <p className="text-sm mt-2">مقدار "حداقل درصد تخطی" را کاهش دهید یا فیلتر اقدام را تغییر دهید.</p>
+          <div className="p-16 text-center flex flex-col items-center text-slate-400">
+            <AlertTriangle size={64} className="mb-4 opacity-20" />
+            <p className="font-bold text-xl">با فیلترهای اعمال شده، هیچ واحدی یافت نشد.</p>
+            <p className="text-base mt-2">مقدار "حداقل درصد تخطی" را کاهش دهید یا فیلتر اقدام را تغییر دهید.</p>
           </div>
         )}
       </div>
