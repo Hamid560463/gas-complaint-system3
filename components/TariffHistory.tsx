@@ -4,6 +4,7 @@ import { Industry, ConsumptionRecord } from '../types';
 import { FileDown, Layers, Calendar, Database } from 'lucide-react';
 import { Button, Card, CardContent } from './ui/Base';
 import * as XLSX from 'xlsx';
+import { getDateFromIndex } from '../services/dateUtils';
 
 interface TariffHistoryProps {
   industries: Industry[];
@@ -21,40 +22,22 @@ const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption }
     return codes;
   }, [industries, activeTab]);
 
-  // 2. Determine Data Columns (Dynamic Dates)
+  // 2. Determine Data Columns (Dynamic Dates based on data indices)
   const dateColumns = useMemo(() => {
-    // Determine the most common Month/Year prefix from data to build labels
-    let maxDateStr = '';
-    consumption.forEach(c => {
-      if (c.lastRecordDate && c.lastRecordDate.localeCompare(maxDateStr) > 0) {
-        maxDateStr = c.lastRecordDate;
-      }
-    });
-
-    // Default to current year/month if no data
-    if (!maxDateStr) maxDateStr = new Date().toLocaleDateString('fa-IR');
-    
-    // Extract YYYY/MM
-    const dateParts = maxDateStr.split('/');
-    const prefix = dateParts.length >= 2 ? `${dateParts[0]}/${dateParts[1]}` : '1404/09';
-
-    // Find days that have data across ALL records
-    const activeDays = new Set<number>();
+    // Find max index used across all data
+    let maxIdx = 0;
     consumption.forEach(c => {
         c.dailyConsumptions.forEach((val, idx) => {
-            if (val > 0) activeDays.add(idx + 1);
+            if (val > 0) maxIdx = Math.max(maxIdx, idx);
         });
     });
 
-    const maxDay = Math.max(...Array.from(activeDays), 0);
-    
     const cols = [];
-    for (let i = 1; i <= maxDay; i++) {
-        // Pad day with 0 if needed
-        const dayStr = i < 10 ? `0${i}` : `${i}`;
+    for (let i = 0; i <= maxIdx; i++) {
+        const dateStr = getDateFromIndex(i);
         cols.push({
-            index: i - 1,
-            label: `${prefix}/${dayStr}`
+            index: i,
+            label: dateStr // e.g. 1404/09/28
         });
     }
     return cols;
@@ -176,10 +159,10 @@ const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption }
                         <th className="p-4 border-b border-slate-700 min-w-[120px] bg-slate-800 text-yellow-300">متوسط آبان</th>
                         {/* Dynamic Date Columns */}
                         {dateColumns.map(col => (
-                            <th key={col.label} className="p-3 border-b border-slate-700 min-w-[90px] text-center font-mono text-xs">
+                            <th key={col.label} className="p-3 border-b border-slate-700 min-w-[90px] text-center font-mono text-xs whitespace-nowrap">
                                 <div className="flex flex-col items-center gap-1">
                                     <Calendar size={12} className="opacity-50" />
-                                    {col.label}
+                                    {col.label.substring(5)} {/* Show just month/day to save space? or full */}
                                 </div>
                             </th>
                         ))}

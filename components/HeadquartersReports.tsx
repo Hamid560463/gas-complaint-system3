@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { Industry, ConsumptionRecord, Restriction } from '../types';
-import { Building2, Download, Filter, Settings2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
+import { Building2, Download, Filter, Settings2, AlertTriangle, FileSpreadsheet, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from './ui/Base';
 import * as XLSX from 'xlsx';
 
 interface HeadquartersReportsProps {
@@ -17,6 +18,10 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
   
   // Basic Filter
   const [minViolationPct, setMinViolationPct] = useState<number>(0);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
 
   const reportData = useMemo(() => {
     return consumption.map(rec => {
@@ -70,6 +75,12 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
     .filter(item => item.violationPct >= minViolationPct)
     .sort((a, b) => b!.violationPct - a!.violationPct);
   }, [consumption, industries, restrictions, minViolationPct, warningLimit, pressureLimit]);
+
+  const totalPages = Math.ceil(reportData.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return reportData.slice(start, start + itemsPerPage);
+  }, [reportData, currentPage, itemsPerPage]);
 
   const exportToGasCompanyFormat = () => {
     if (!reportData.length) return;
@@ -143,7 +154,7 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
                   type="number" 
                   className="w-full p-3.5 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-lg ltr text-center"
                   value={minViolationPct}
-                  onChange={e => setMinViolationPct(Number(e.target.value))}
+                  onChange={e => { setMinViolationPct(Number(e.target.value)); setCurrentPage(1); }}
                   placeholder="0"
                 />
                 <span className="absolute left-4 top-3.5 text-slate-400 font-bold">%</span>
@@ -191,8 +202,23 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
         <div className="p-5 bg-slate-100 border-b font-bold text-slate-700 flex justify-between items-center">
-            <span className="text-lg">پیش‌نمایش لیست ارسالی</span>
-            <span className="bg-white px-3 py-1 rounded text-sm flex items-center border border-slate-300">{reportData.length} مورد</span>
+            <div className="flex items-center gap-3">
+               <span className="text-lg">پیش‌نمایش لیست ارسالی</span>
+               <span className="bg-white px-3 py-1 rounded text-sm flex items-center border border-slate-300">{reportData.length} مورد</span>
+            </div>
+            
+            <div className="flex items-center gap-2 no-print">
+               <span className="text-xs font-bold text-slate-500">تعداد در صفحه:</span>
+               <select 
+                  className="h-9 border rounded-lg px-2 bg-white outline-none focus:ring-2 focus:ring-slate-900 text-sm"
+                  value={itemsPerPage}
+                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
+               >
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+               </select>
+            </div>
         </div>
         <div className="overflow-x-auto">
              <table className="w-full text-base text-right">
@@ -208,7 +234,7 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
                 </tr>
               </thead>
               <tbody>
-                {reportData.map((row, idx) => (
+                {paginatedData.map((row, idx) => (
                     <tr key={idx} className="border-b hover:bg-slate-50">
                         <td className="p-4">یزد</td>
                         <td className="p-4">{row!.city}</td>
@@ -225,6 +251,38 @@ const HeadquartersReports: React.FC<HeadquartersReportsProps> = ({ industries, c
                 ))}
               </tbody>
              </table>
+             
+             {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="p-4 border-t flex items-center justify-between bg-slate-50 no-print">
+                    <div className="text-sm text-slate-500">
+                        نمایش {((currentPage - 1) * itemsPerPage) + 1} تا {Math.min(currentPage * itemsPerPage, reportData.length)} از {reportData.length} مورد
+                    </div>
+                    <div className="flex gap-2">
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(prev => prev - 1)}
+                            className="w-9 h-9 p-0"
+                        >
+                            <ChevronRight size={16} />
+                        </Button>
+                        <div className="flex items-center justify-center font-bold text-sm min-w-[30px]">
+                            {currentPage} / {totalPages}
+                        </div>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(prev => prev + 1)}
+                            className="w-9 h-9 p-0"
+                        >
+                            <ChevronLeft size={16} />
+                        </Button>
+                    </div>
+                </div>
+            )}
         </div>
       </div>
 

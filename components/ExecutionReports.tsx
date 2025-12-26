@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { Industry, ConsumptionRecord, Restriction } from '../types';
-import { AlertTriangle, Gavel, Filter, Download, AlertOctagon, Ban, Settings2 } from 'lucide-react';
+import { AlertTriangle, Gavel, Filter, Download, AlertOctagon, Ban, Settings2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from './ui/Base';
 import * as XLSX from 'xlsx';
 
 interface ExecutionReportsProps {
@@ -14,6 +15,10 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
   // Filters
   const [minViolationPct, setMinViolationPct] = useState<number>(0);
   const [actionFilter, setActionFilter] = useState<string>('ALL');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
 
   // Threshold Configuration
   const [warningLimit, setWarningLimit] = useState<number>(20); // Up to 20% -> Warning
@@ -85,6 +90,12 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
     .sort((a, b) => b!.violationPct - a!.violationPct); // Sort by Percentage desc
   }, [consumption, industries, restrictions, minViolationPct, actionFilter, warningLimit, pressureLimit]);
 
+  const totalPages = Math.ceil(reportData.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return reportData.slice(start, start + itemsPerPage);
+  }, [reportData, currentPage, itemsPerPage]);
+
   const exportToExcel = () => {
     if (!reportData) return;
     const dataToExport = reportData.map(r => ({
@@ -122,7 +133,7 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
                   type="number" 
                   className="w-full p-3.5 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-red-500 outline-none font-bold text-lg ltr text-center"
                   value={minViolationPct}
-                  onChange={e => setMinViolationPct(Number(e.target.value))}
+                  onChange={e => { setMinViolationPct(Number(e.target.value)); setCurrentPage(1); }}
                   placeholder="0"
                 />
                 <span className="absolute left-4 top-3.5 text-slate-400 font-bold">%</span>
@@ -138,7 +149,7 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
               <select 
                   className="w-full p-3.5 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-base"
                   value={actionFilter}
-                  onChange={e => setActionFilter(e.target.value)}
+                  onChange={e => { setActionFilter(e.target.value); setCurrentPage(1); }}
               >
                   <option value="ALL">نمایش همه موارد</option>
                   <option value="اخطار کتبی">اخطار کتبی</option>
@@ -209,16 +220,31 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
       {/* Results Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
         <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-           <h3 className="font-black text-slate-800 flex items-center gap-2 text-xl">
-             <Gavel size={24} className="text-slate-900" />
-             لیست مشمولین اعمال محدودیت (نمای داخلی)
-           </h3>
-           <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-sm font-bold">
-             {reportData.length} واحد شناسایی شد
-           </span>
+           <div className="flex items-center gap-4">
+              <h3 className="font-black text-slate-800 flex items-center gap-2 text-xl">
+                <Gavel size={24} className="text-slate-900" />
+                لیست مشمولین اعمال محدودیت (نمای داخلی)
+              </h3>
+              <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-sm font-bold">
+                {reportData.length} واحد شناسایی شد
+              </span>
+           </div>
+           
+           <div className="flex items-center gap-2 no-print">
+               <span className="text-xs font-bold text-slate-500">تعداد در صفحه:</span>
+               <select 
+                  className="h-9 border rounded-lg px-2 bg-white outline-none focus:ring-2 focus:ring-slate-900 text-sm"
+                  value={itemsPerPage}
+                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
+               >
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+               </select>
+            </div>
         </div>
         
-        {reportData.length > 0 ? (
+        {paginatedData.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-base text-right">
               <thead className="bg-slate-900 text-white">
@@ -233,7 +259,7 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
                 </tr>
               </thead>
               <tbody>
-                {reportData.map((row, index) => (
+                {paginatedData.map((row, index) => (
                   <tr key={index} className="border-b hover:bg-slate-50 transition-colors">
                     <td className="p-5 font-bold text-slate-800">{row!.name}</td>
                     <td className="p-5 font-mono text-slate-500">{row!.subscriptionId}</td>
@@ -256,6 +282,37 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
                 ))}
               </tbody>
             </table>
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="p-4 border-t flex items-center justify-between bg-slate-50 no-print">
+                    <div className="text-sm text-slate-500">
+                        نمایش {((currentPage - 1) * itemsPerPage) + 1} تا {Math.min(currentPage * itemsPerPage, reportData.length)} از {reportData.length} مورد
+                    </div>
+                    <div className="flex gap-2">
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(prev => prev - 1)}
+                            className="w-9 h-9 p-0"
+                        >
+                            <ChevronRight size={16} />
+                        </Button>
+                        <div className="flex items-center justify-center font-bold text-sm min-w-[30px]">
+                            {currentPage} / {totalPages}
+                        </div>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(prev => prev + 1)}
+                            className="w-9 h-9 p-0"
+                        >
+                            <ChevronLeft size={16} />
+                        </Button>
+                    </div>
+                </div>
+            )}
           </div>
         ) : (
           <div className="p-16 text-center flex flex-col items-center text-slate-400">

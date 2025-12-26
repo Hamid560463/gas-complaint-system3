@@ -2,11 +2,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Industry, ConsumptionRecord, Restriction } from '../types';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Calendar, ArrowDownUp, Info, BarChart3, FileDown, CheckSquare, Square } from 'lucide-react';
+import { Calendar, ArrowDownUp, Info, BarChart3, FileDown, CheckSquare, Square, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button, Card, CardContent } from './ui/Base';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { getDateFromIndex, getIndexFromDate } from '../services/dateUtils';
 
 interface ReportsProps {
   industries: Industry[];
@@ -24,6 +25,10 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
   
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50); // Default to 50 for large reports
+
   // Column Visibility State
   const [visibleColumns, setVisibleColumns] = useState({
       name: true,
@@ -35,24 +40,25 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
       chart: true
   });
 
-  const lastDayWithData = useMemo(() => {
+  const lastIndexWithData = useMemo(() => {
     let max = 0;
     consumption.forEach(c => {
       c.dailyConsumptions.forEach((val, idx) => {
-        if (val > 0) max = Math.max(max, idx + 1);
+        if (val > 0) max = Math.max(max, idx);
       });
     });
-    return max > 0 ? max : 31; 
+    return max; 
   }, [consumption]);
 
-  const [startDay, setStartDay] = useState<number>(1);
-  const [endDay, setEndDay] = useState<number>(31);
+  // Use Indices for filtering
+  const [startIndex, setStartIndex] = useState<number>(0);
+  const [endIndex, setEndIndex] = useState<number>(30); // Default to a month roughly
   
   useEffect(() => {
-    if (lastDayWithData > 0 && lastDayWithData !== 31) {
-      setEndDay(lastDayWithData);
+    if (lastIndexWithData > 0) {
+      setEndIndex(lastIndexWithData);
     }
-  }, [lastDayWithData]);
+  }, [lastIndexWithData]);
   
   const getRestriction = (code: string) => restrictions.find(r => r.usageCode === code)?.percentage || 0;
   
@@ -64,15 +70,22 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
     const limitFactor = (1 - percentage / 100);
     const allowed = industry.baseMonthAvg * limitFactor;
     
-    const filteredConsumptions = rec.dailyConsumptions.slice(startDay - 1, endDay);
+    // Slice data based on indices
+    const filteredConsumptions = rec.dailyConsumptions.slice(startIndex, endIndex + 1);
     
-    const dailyData = filteredConsumptions.map((val, idx) => ({
-      day: startDay + idx,
-      value: val,
-      allowed: allowed,
-      violation: val > allowed ? val - allowed : 0,
-      isViolation: val > allowed
-    }));
+    const dailyData = filteredConsumptions.map((val, idx) => {
+      const actualIndex = startIndex + idx;
+      const dateStr = getDateFromIndex(actualIndex);
+      return {
+        index: actualIndex,
+        date: dateStr,
+        displayDate: dateStr.substring(5), // 09/28
+        value: val,
+        allowed: allowed,
+        violation: val > allowed ? val - allowed : 0,
+        isViolation: val > allowed
+      };
+    });
 
     const violationDays = dailyData.filter(d => d.isViolation).length;
     const compliantDays = dailyData.length - violationDays;
@@ -80,15 +93,9 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
     const totalConsumption = dailyData.reduce((sum, d) => sum + d.value, 0);
 
     let lastValue = 0;
-    if (rec.lastRecordDate) {
-      const parts = rec.lastRecordDate.split('/');
-      const day = parseInt(parts[parts.length - 1], 10);
-      if (!isNaN(day) && day >= 1 && day <= 31) {
-        lastValue = rec.dailyConsumptions[day - 1];
-      }
-    } else {
-      lastValue = dailyData.length > 0 ? dailyData[dailyData.length - 1].value : 0;
-    }
+    // Find last non-zero
+    const lastEntry = dailyData.filter(d => d.value > 0).pop();
+    if(lastEntry) lastValue = lastEntry.value;
 
     return {
       industry,
@@ -121,7 +128,7 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
         allowed: data.allowed
       };
     }).filter(item => item !== null) as any[];
-  }, [consumption, industries, restrictions, startDay, endDay]);
+  }, [consumption, industries, restrictions, startIndex, endIndex]);
 
   const sortedTableData = useMemo(() => {
     const sorted = [...tableData].sort((a, b) => {
@@ -140,6 +147,12 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
     });
     return sorted;
   }, [tableData, sortField, sortDirection]);
+
+  const totalPages = Math.ceil(sortedTableData.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedTableData.slice(start, start + itemsPerPage);
+  }, [sortedTableData, currentPage, itemsPerPage]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -194,7 +207,6 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
         const imgWidth = pdfWidth;
         const imgHeight = (canvas.height * pdfWidth) / canvas.width;
         
-        // Split pages if content is too long
         let heightLeft = imgHeight;
         let position = 0;
 
@@ -220,7 +232,7 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
   const selectedData = selectedIndustryId ? calculateData(consumption.find(c => c.subscriptionId === selectedIndustryId)!) : null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-10">
       {/* Control Panel (No Print) */}
       <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm space-y-6 no-print">
         <div className="flex flex-wrap gap-6 items-end">
@@ -244,40 +256,62 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Calendar size={20} className="text-slate-400" />
-              <span className="text-base font-bold">بازه روزانه:</span>
+              <span className="text-base font-bold">بازه تاریخی:</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">تا</span>
-              <input type="number" value={startDay} min={1} max={endDay} onChange={e => setStartDay(Number(e.target.value))} className="w-16 p-3 border rounded-lg text-center font-bold text-base" />
+            {/* Start Date Control */}
+            <div className="flex items-center gap-2 bg-white border rounded-lg p-1 px-3">
+              <span className="text-xs text-slate-400">از</span>
+              <span className="font-bold text-blue-700 font-mono text-sm">{getDateFromIndex(startIndex)}</span>
+              <div className="flex flex-col ml-2">
+                  <button onClick={() => setStartIndex(Math.max(0, startIndex-1))} className="text-[10px] hover:text-blue-600">▲</button>
+                  <button onClick={() => setStartIndex(Math.min(endIndex, startIndex+1))} className="text-[10px] hover:text-blue-600">▼</button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">تا</span>
-              <input type="number" value={endDay} min={startDay} max={31} onChange={e => setEndDay(Number(e.target.value))} className="w-16 p-3 border rounded-lg text-center font-bold text-base" />
+            
+             {/* End Date Control */}
+            <div className="flex items-center gap-2 bg-white border rounded-lg p-1 px-3">
+              <span className="text-xs text-slate-400">تا</span>
+              <span className="font-bold text-blue-700 font-mono text-sm">{getDateFromIndex(endIndex)}</span>
+              <div className="flex flex-col ml-2">
+                  <button onClick={() => setEndIndex(Math.min(120, endIndex+1))} className="text-[10px] hover:text-blue-600">▲</button>
+                  <button onClick={() => setEndIndex(Math.max(startIndex, endIndex-1))} className="text-[10px] hover:text-blue-600">▼</button>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="pt-4 border-t border-slate-200 flex flex-wrap gap-4 text-sm">
-             <span className="font-bold self-center">نمایش ستون‌ها:</span>
-             {Object.keys(visibleColumns).map(key => (
-                 <button 
-                    key={key} 
-                    onClick={() => toggleColumn(key as any)}
-                    className="flex items-center gap-2 bg-white border rounded-lg px-3 py-2 hover:bg-slate-100 transition-colors"
-                 >
-                    {/* @ts-ignore */}
-                    {visibleColumns[key] ? <CheckSquare size={16} className="text-blue-600"/> : <Square size={16} />}
-                    <span>
-                        {key === 'name' && 'نام واحد'}
-                        {key === 'baseMonthAvg' && 'مصرف مبنا'}
-                        {key === 'lastValue' && 'آخرین مصرف'}
-                        {key === 'restriction' && 'درصد محدودیت'}
-                        {key === 'violationAmt' && 'میزان تخطی'}
-                        {key === 'violationPct' && 'درصد تخطی'}
-                        {key === 'chart' && 'نمودار'}
-                    </span>
-                 </button>
-             ))}
+        <div className="pt-4 border-t border-slate-200 flex flex-col md:flex-row justify-between gap-4">
+            <div className="flex flex-wrap gap-4 text-sm items-center">
+                <span className="font-bold">نمایش ستون‌ها:</span>
+                {Object.keys(visibleColumns).map(key => (
+                    <button 
+                        key={key} 
+                        onClick={() => toggleColumn(key as any)}
+                        className="flex items-center gap-2 bg-white border rounded-lg px-3 py-2 hover:bg-slate-100 transition-colors"
+                    >
+                        {/* @ts-ignore */}
+                        {visibleColumns[key] ? <CheckSquare size={16} className="text-blue-600"/> : <Square size={16} />}
+                        <span>
+                            {key === 'name' && 'نام واحد'}
+                            {key === 'baseMonthAvg' && 'مصرف مبنا'}
+                            {key === 'lastValue' && 'آخرین مصرف'}
+                            {key === 'restriction' && 'درصد محدودیت'}
+                            {key === 'violationAmt' && 'میزان تخطی'}
+                            {key === 'violationPct' && 'درصد تخطی'}
+                            {key === 'chart' && 'نمودار'}
+                        </span>
+                    </button>
+                ))}
+            </div>
+            
+            <div className="flex gap-2">
+                <Button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 shadow-sm gap-2 h-10 px-6 text-sm">
+                    <FileDown size={18}/> خروجی اکسل
+                </Button>
+                <Button onClick={generatePDF} className="bg-blue-600 hover:bg-blue-700 shadow-sm gap-2 h-10 px-6 text-sm" isLoading={isGeneratingPdf}>
+                    <Printer size={18}/> دریافت PDF رسمی
+                </Button>
+            </div>
         </div>
       </div>
 
@@ -318,12 +352,12 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
             </div>
 
             <div className="bg-white p-6 border rounded-2xl shadow-sm">
-                <h3 className="font-bold mb-6 text-center text-slate-700 text-lg">نمودار تحلیلی روند مصرف در بازه گزارش</h3>
+                <h3 className="font-bold mb-6 text-center text-slate-700 text-lg">نمودار تحلیلی روند مصرف ({getDateFromIndex(startIndex)} تا {getDateFromIndex(endIndex)})</h3>
                 <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={selectedData.dailyData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="day" />
+                    <XAxis dataKey="displayDate" />
                     <YAxis />
                     <ReferenceLine y={selectedData.allowed} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'سقف مجاز', fill: '#ef4444', fontSize: 12 }} />
                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
@@ -344,9 +378,24 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
 
         {/* Full Table */}
         <div>
-            <div className="flex items-center gap-3 mb-6">
-                <div className="w-2.5 h-8 bg-slate-900 rounded-full"></div>
-                <h3 className="text-2xl font-black text-slate-800">جدول جامع پایش</h3>
+            <div className="flex items-center gap-3 mb-6 justify-between">
+                <div className="flex items-center gap-3">
+                   <div className="w-2.5 h-8 bg-slate-900 rounded-full"></div>
+                   <h3 className="text-2xl font-black text-slate-800">جدول جامع پایش</h3>
+                </div>
+                
+                 <div className="flex items-center gap-2 no-print">
+                   <span className="text-xs font-bold text-slate-500">تعداد در صفحه:</span>
+                   <select 
+                      className="h-9 border rounded-lg px-2 bg-white outline-none focus:ring-2 focus:ring-slate-900 text-sm"
+                      value={itemsPerPage}
+                      onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                   >
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                   </select>
+                </div>
             </div>
             <table className="w-full text-base text-right border-collapse">
                 <thead className="bg-slate-900 text-white select-none">
@@ -361,7 +410,7 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
                 </tr>
                 </thead>
                 <tbody>
-                {sortedTableData.map((row, idx) => (
+                {paginatedData.map((row, idx) => (
                     <tr key={row.subscriptionId} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
                     {visibleColumns.name && <td className="p-4 border border-slate-200 font-bold text-slate-800">{row.name}</td>}
                     {visibleColumns.baseMonthAvg && <td className="p-4 border border-slate-200 font-mono text-slate-600">{row.baseMonthAvg.toLocaleString()}</td>}
@@ -385,6 +434,38 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
                 ))}
                 </tbody>
             </table>
+            
+             {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="p-4 border-t flex items-center justify-between bg-slate-50 no-print">
+                    <div className="text-sm text-slate-500">
+                        نمایش {((currentPage - 1) * itemsPerPage) + 1} تا {Math.min(currentPage * itemsPerPage, sortedTableData.length)} از {sortedTableData.length} مورد
+                    </div>
+                    <div className="flex gap-2">
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(prev => prev - 1)}
+                            className="w-9 h-9 p-0"
+                        >
+                            <ChevronRight size={16} />
+                        </Button>
+                        <div className="flex items-center justify-center font-bold text-sm min-w-[30px]">
+                            {currentPage} / {totalPages}
+                        </div>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(prev => prev + 1)}
+                            className="w-9 h-9 p-0"
+                        >
+                            <ChevronLeft size={16} />
+                        </Button>
+                    </div>
+                </div>
+            )}
         </div>
 
         {/* Footer */}
@@ -392,15 +473,6 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
             <div>تهیه شده در سامانه هوشمند پایش گاز استان</div>
             <div>صفحه ۱</div>
         </div>
-      </div>
-
-      <div className="fixed bottom-8 left-8 flex gap-3 no-print">
-         <Button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 shadow-xl gap-2 h-12 px-6 text-base">
-             <FileDown size={20}/> اکسل
-         </Button>
-         <Button onClick={generatePDF} className="bg-blue-600 hover:bg-blue-700 shadow-xl gap-2 h-12 px-6 text-base" isLoading={isGeneratingPdf}>
-             <FileDown size={20}/> دریافت PDF رسمی
-         </Button>
       </div>
     </div>
   );

@@ -143,7 +143,7 @@ const App: React.FC = () => {
             </div>
             <h1 className="text-xl font-bold text-white tracking-tight">سامانه پایش گاز</h1>
           </div>
-          <p className="text-xs text-center uppercase tracking-widest opacity-70 font-medium">نسخه سازمانی ۱۴۰۴</p>
+          <p className="text-xs text-center uppercase tracking-widest opacity-70 font-medium">نسخه ۱۴۰۴</p>
         </div>
         
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
@@ -170,8 +170,8 @@ const App: React.FC = () => {
         </nav>
         
         <div className="p-6 text-xs text-slate-400 border-t border-slate-800/50 text-center leading-relaxed">
-           <p>واحد کنترل و پایش مصرف انرژی</p>
-           <p className="mt-1 opacity-70">استانداری یزد</p>
+           <p>واحد کنترل و پایش بهره برداری</p>
+           <p className="mt-1 opacity-70">شرکت گاز استان یزد</p>
         </div>
       </aside>
 
@@ -199,14 +199,17 @@ const App: React.FC = () => {
             </div>
           </header>
 
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-forwards">
+          <div className="animate-in fade-in duration-500">
             {renderView()}
           </div>
 
           <footer className="mt-12 py-6 border-t border-slate-200/60 text-center no-print">
-              <div className="flex items-center justify-center gap-2 text-sm text-slate-400 font-medium">
-                 <Copyright size={14} />
-                 <span>۱۴۰۴ | سامانه جامع مدیریت مصرف گاز صنایع</span>
+              <div className="flex flex-col items-center justify-center gap-2 text-sm text-slate-400 font-medium">
+                 <div className="flex items-center gap-2">
+                   <Copyright size={14} />
+                   <span>۱۴۰۴ | سامانه جامع مدیریت مصرف گاز صنایع</span>
+                 </div>
+                 <div className="text-xs opacity-80 mt-1">طراحی و توسعه : حمیدرضا نعمت اللهی</div>
               </div>
           </footer>
         </div>
