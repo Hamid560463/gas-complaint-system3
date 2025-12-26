@@ -42,7 +42,8 @@ const Settings: React.FC<SettingsProps> = ({ restrictions, setRestrictions, indu
           return (
             <div key={code} className="bg-white p-6 rounded-xl border flex items-center justify-between">
               <div className="flex flex-col">
-                <span className="font-bold text-lg">تعرفه {code}</span>
+                {/* Use the full name if it exists, otherwise prepend 'Tariff' */}
+                <span className="font-bold text-lg">{code.startsWith('تعرفه') ? code : `تعرفه ${code}`}</span>
                 <span className="text-sm text-slate-500">
                   {industries.filter(i => i.usageCode === code).length} صنعت در این گروه
                 </span>

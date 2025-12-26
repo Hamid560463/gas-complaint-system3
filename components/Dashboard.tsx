@@ -219,7 +219,7 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
                         <Flame size={20} className="text-slate-600" />
                     </div>
                     <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold border border-indigo-100">
-                        کد تعرفه {agg.code}
+                        {agg.code.startsWith('تعرفه') ? agg.code : `کد تعرفه ${agg.code}`}
                     </span>
                 </div>
                 
@@ -292,7 +292,11 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
                 onChange={e => setFilterUsage(e.target.value)}
              >
                <option value="ALL">همه تعرفه‌ها</option>
-               {uniqueUsages.map(c => <option key={c} value={c}>تعرفه {c}</option>)}
+               {uniqueUsages.map(c => (
+                 <option key={c} value={c}>
+                   {c.startsWith('تعرفه') ? c : `تعرفه ${c}`}
+                 </option>
+               ))}
              </select>
 
              {/* Actions */}

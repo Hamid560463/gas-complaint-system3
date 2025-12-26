@@ -14,6 +14,15 @@ if (!fs.existsSync(DATA_DIR)) {
 let mainWindow;
 
 function createWindow() {
+  const isDev = !app.isPackaged;
+  
+  // Logic to handle icon path correctly in both Dev and Production
+  // In Dev: icon is in public/icon.ico relative to root
+  // In Prod: Vite copies public assets to dist/, so it's in dist/icon.ico
+  const iconPath = isDev 
+    ? path.join(__dirname, '../public/icon.ico') 
+    : path.join(__dirname, '../dist/icon.ico');
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -25,11 +34,9 @@ function createWindow() {
       contextIsolation: true,
     },
     autoHideMenuBar: true, // Hide default menu bar
-    icon: path.join(__dirname, '../public/icon.ico') // Ensure you have an icon or remove this line
+    icon: iconPath // Set the dynamic icon path
   });
 
-  const isDev = !app.isPackaged;
-  
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     // mainWindow.webContents.openDevTools(); // Uncomment for debugging

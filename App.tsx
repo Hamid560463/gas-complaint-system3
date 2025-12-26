@@ -30,13 +30,38 @@ const App: React.FC = () => {
           storageService.getRestrictions()
         ]);
         
-        setIndustries(inds);
+        // --- Migration Logic for Legacy Data (Fixing existing tariff codes) ---
+        const mapLegacyCode = (code: string) => {
+           const c = code ? code.trim() : '';
+           switch(c) {
+             case '7': return 'تعرفه 7 (کاشی و سرامیک)';
+             case '10': return 'تعرفه 10 (گچ و آهک)';
+             case '6': return 'تعرفه 6 (شیشه)';
+             case '5': return 'تعرفه 5 (قند و شکر)';
+             case '8': return 'تعرفه 8 (صنایع فلزی)';
+             case '4': return 'تعرفه 4 (آجر)';
+             default: return c;
+           }
+        };
+
+        const migratedIndustries = inds.map(i => ({
+            ...i,
+            usageCode: mapLegacyCode(i.usageCode)
+        }));
+
+        // Also migrate restrictions to match new industry codes so settings aren't lost
+        const migratedRestrictions = rests.map(r => ({
+            ...r,
+            usageCode: mapLegacyCode(r.usageCode)
+        }));
+        
+        setIndustries(migratedIndustries);
         setConsumptionRecords(cons);
-        setRestrictions(rests);
+        setRestrictions(migratedRestrictions);
         
         // Default selection
-        if (inds.length > 0 && selectedIds.length === 0) {
-          setSelectedIds([inds[0].subscriptionId]);
+        if (migratedIndustries.length > 0 && selectedIds.length === 0) {
+          setSelectedIds([migratedIndustries[0].subscriptionId]);
         }
       } catch (error) {
         console.error("Failed to load data", error);

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Industry, ConsumptionRecord } from '../types';
 import * as XLSX from 'xlsx';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, Edit, XCircle, CheckCircle, Trash2 } from 'lucide-react';
 
 interface DataManagementProps {
   industries: Industry[];
@@ -14,11 +14,59 @@ interface DataManagementProps {
 const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustries, consumption, setConsumption }) => {
   const [activeTab, setActiveTab] = useState<'MASTER' | 'CONSUMPTION'>('MASTER');
   const [manualIndustry, setManualIndustry] = useState<Partial<Industry>>({});
+  const [isEditing, setIsEditing] = useState(false);
 
-  const handleAddIndustry = () => {
-    if (!manualIndustry.subscriptionId || !manualIndustry.name) return;
-    setIndustries([...industries, manualIndustry as Industry]);
+  // Helper function to map usage codes to descriptive names
+  const mapUsageCode = (rawCode: string) => {
+    const c = rawCode.trim();
+    switch(c) {
+      case '7': return 'تعرفه 7 (کاشی و سرامیک)';
+      case '10': return 'تعرفه 10 (گچ و آهک)';
+      case '6': return 'تعرفه 6 (شیشه)';
+      case '5': return 'تعرفه 5 (قند و شکر)';
+      case '8': return 'تعرفه 8 (صنایع فلزی)';
+      case '4': return 'تعرفه 4 (آجر)';
+      default: return c;
+    }
+  };
+
+  const handleSaveIndustry = () => {
+    if (!manualIndustry.subscriptionId || !manualIndustry.name) {
+      alert('لطفاً نام و شماره اشتراک را وارد کنید.');
+      return;
+    }
+
+    if (isEditing) {
+      // Update existing
+      setIndustries(prev => prev.map(item => 
+        item.subscriptionId === manualIndustry.subscriptionId 
+          ? manualIndustry as Industry 
+          : item
+      ));
+      alert('اطلاعات با موفقیت ویرایش شد.');
+      setIsEditing(false);
+    } else {
+      // Add new
+      const exists = industries.some(i => i.subscriptionId === manualIndustry.subscriptionId);
+      if (exists) {
+        alert('این شماره اشتراک قبلاً ثبت شده است. لطفاً از دکمه ویرایش در جدول استفاده کنید.');
+        return;
+      }
+      setIndustries([...industries, manualIndustry as Industry]);
+    }
     setManualIndustry({});
+  };
+
+  const handleEdit = (industry: Industry) => {
+    setManualIndustry(industry);
+    setIsEditing(true);
+    // Smooth scroll to top to show the form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setManualIndustry({});
+    setIsEditing(false);
   };
 
   const handleOpenDataFolder = () => {
@@ -60,7 +108,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
           subscriptionId: String(row['شماره اشتراک'] || row['subscriptionId'] || ''),
           name: row['ایستگاه'] || row['name'] || '',
           city: row['شهر'] || row['city'] || '',
-          usageCode: String(row['کد مصرف'] || row['usageCode'] || ''),
+          usageCode: mapUsageCode(String(row['کد مصرف'] || row['usageCode'] || '')), // Applied mapping here
           stationCapacity: Number(row['ظرفیت ایستگاه'] || row['stationCapacity'] || 0),
           address: row['آدرس'] || row['address'] || (row['شهر'] || ''),
           phone: String(row['موبایل'] || row['phone'] || ''),
@@ -133,7 +181,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                 dailyConsumptions: dailyData,
                 lastRecordDate: maxDate
             } as ConsumptionRecord;
-        }).filter(r => r.subscriptionId && r.dailyConsumptions.some(d => d > 0 || d === 0)); // Keep records even if all 0 if needed, but usually we filter empty. Kept existing filter logic roughly.
+        }).filter(r => r.subscriptionId && r.dailyConsumptions.some(d => d > 0 || d === 0)); 
 
         if (newRecords.length > 0) {
              // Merge with existing records
@@ -193,8 +241,11 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
 
       {activeTab === 'MASTER' ? (
         <div className="space-y-6">
-          <div className="bg-slate-50 p-6 rounded-lg border border-slate-200">
-            <h3 className="font-bold mb-4">ورود دستی اطلاعات پایه صنعت</h3>
+          <div className={`p-6 rounded-lg border transition-colors ${isEditing ? 'bg-yellow-50 border-yellow-200' : 'bg-slate-50 border-slate-200'}`}>
+            <h3 className="font-bold mb-4 flex items-center gap-2">
+              {isEditing ? <Edit size={20} className="text-yellow-600"/> : null}
+              {isEditing ? 'ویرایش اطلاعات صنعت' : 'ورود دستی اطلاعات پایه صنعت'}
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <input 
                 type="text" placeholder="نام ایستگاه / شرکت" 
@@ -204,9 +255,11 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
               />
               <input 
                 type="text" placeholder="شماره اشتراک" 
-                className="p-2 border rounded"
+                className={`p-2 border rounded ${isEditing ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : ''}`}
                 value={manualIndustry.subscriptionId || ''}
                 onChange={e => setManualIndustry({...manualIndustry, subscriptionId: e.target.value})}
+                disabled={isEditing}
+                title={isEditing ? 'شماره اشتراک در حالت ویرایش قابل تغییر نیست' : ''}
               />
                <input 
                 type="text" placeholder="کد مصرف (مثال: 7)" 
@@ -238,12 +291,32 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                 value={manualIndustry.baseMonthAvg || ''}
                 onChange={e => setManualIndustry({...manualIndustry, baseMonthAvg: Number(e.target.value)})}
               />
-              <button 
-                onClick={handleAddIndustry}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 col-span-4 mt-2"
-              >
-                افزودن به لیست
-              </button>
+              
+              {isEditing ? (
+                <div className="col-span-4 flex gap-2">
+                  <button 
+                    onClick={handleSaveIndustry}
+                    className="flex-1 bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 flex items-center justify-center gap-2 font-bold"
+                  >
+                    <CheckCircle size={18} />
+                    ثبت تغییرات
+                  </button>
+                  <button 
+                    onClick={handleCancelEdit}
+                    className="flex-1 bg-slate-500 text-white px-4 py-2 rounded hover:bg-slate-600 flex items-center justify-center gap-2"
+                  >
+                    <XCircle size={18} />
+                    انصراف
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={handleSaveIndustry}
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 col-span-4 mt-2 font-bold"
+                >
+                  افزودن به لیست
+                </button>
+              )}
             </div>
           </div>
 
@@ -271,7 +344,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
               </thead>
               <tbody>
                 {industries.map(ind => (
-                  <tr key={ind.subscriptionId} className="border-b hover:bg-slate-50">
+                  <tr key={ind.subscriptionId} className={`border-b hover:bg-slate-50 ${isEditing && manualIndustry.subscriptionId === ind.subscriptionId ? 'bg-yellow-50' : ''}`}>
                     <td className="p-3 font-bold">{ind.name}</td>
                     <td className="p-3">{ind.subscriptionId}</td>
                     <td className="p-3">{ind.usageCode}</td>
@@ -280,12 +353,31 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                     <td className="p-3">{ind.phone}</td>
                     <td className="p-3 bg-yellow-50 font-bold">{ind.baseMonthAvg ? ind.baseMonthAvg.toLocaleString() : '-'}</td>
                     <td className="p-3">
-                      <button 
-                        onClick={() => setIndustries(industries.filter(i => i.subscriptionId !== ind.subscriptionId))}
-                        className="text-red-500 hover:underline"
-                      >
-                        حذف
-                      </button>
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => handleEdit(ind)}
+                          className="text-blue-500 hover:text-blue-700 flex items-center gap-1"
+                          title="ویرایش"
+                        >
+                          <Edit size={16} />
+                          <span className="hidden md:inline">ویرایش</span>
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if (window.confirm('آیا از حذف این مورد اطمینان دارید؟')) {
+                                setIndustries(industries.filter(i => i.subscriptionId !== ind.subscriptionId));
+                                if (isEditing && manualIndustry.subscriptionId === ind.subscriptionId) {
+                                  handleCancelEdit();
+                                }
+                            }
+                          }}
+                          className="text-red-500 hover:text-red-700 flex items-center gap-1"
+                          title="حذف"
+                        >
+                          <Trash2 size={16} />
+                          <span className="hidden md:inline">حذف</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
