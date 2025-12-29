@@ -14,7 +14,7 @@ import Help from './components/Help';
 import { LayoutDashboard, FileSpreadsheet, Settings as SettingsIcon, BarChart3, Copyright, Printer, ClipboardList, Building2, Flame, HelpCircle, History, MessageSquare, Globe, Menu, X } from 'lucide-react';
 import { Skeleton, Button } from './components/ui/Base';
 import { START_DATE } from './services/dateUtils';
-
+import 'index.css'
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType | 'HELP'>('DASHBOARD');
   const [industries, setIndustries] = useState<Industry[]>([]);
