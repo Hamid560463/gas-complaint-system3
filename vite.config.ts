@@ -11,5 +11,24 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Separate third-party libraries into their own chunks to avoid large file warnings
+          if (id.includes('node_modules')) {
+            if (id.includes('recharts')) {
+              return 'charts';
+            }
+            if (id.includes('xlsx') || id.includes('jspdf') || id.includes('html2canvas')) {
+              return 'utils';
+            }
+            if (id.includes('lucide-react')) {
+              return 'icons';
+            }
+            return 'vendor'; // React and others
+          }
+        }
+      }
+    }
   }
 });
