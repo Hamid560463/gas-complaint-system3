@@ -3,7 +3,7 @@ import React, { useMemo, useState, useRef } from 'react';
 import { Industry, ConsumptionRecord, Restriction } from '../types';
 import { 
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  Legend, ReferenceLine, LineChart, Line, PieChart, Pie
+  Legend, ReferenceLine, LineChart, Line, PieChart, Pie, ComposedChart
 } from 'recharts';
 import { Users, Gauge, Calendar, AlertTriangle, CheckCircle2, BarChart3, Search, Filter, X, Flame, Download, Camera, LayoutDashboard, LineChart as LineChartIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Input, Button, SelectWrapper } from './ui/Base';
@@ -27,13 +27,13 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
   const [filterUsage, setFilterUsage] = useState('ALL');
   const chartsRef = useRef<HTMLDivElement>(null);
 
-  const uniqueCities = useMemo(() => Array.from(new Set(industries.map(i => i.city))).filter(Boolean).sort(), [industries]);
+  const uniqueCities = useMemo(() => Array.from(new Set(industries.map(i => i.city ? i.city.trim() : ''))).filter(Boolean).sort(), [industries]);
   const uniqueUsages = useMemo(() => Array.from(new Set(industries.map(i => i.usageCode))).filter(Boolean).sort(), [industries]);
 
   const filteredIndustries = useMemo(() => {
     return industries.filter(ind => {
       const matchSearch = (ind.name || '').includes(searchTerm) || (ind.subscriptionId || '').includes(searchTerm);
-      const matchCity = filterCity === 'ALL' || ind.city === filterCity;
+      const matchCity = filterCity === 'ALL' || (ind.city && ind.city.trim() === filterCity);
       const matchUsage = filterUsage === 'ALL' || ind.usageCode === filterUsage;
       return matchSearch && matchCity && matchUsage;
     });
@@ -49,7 +49,7 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
     let max = 0;
     consumption.forEach(c => {
       c.dailyConsumptions.forEach((val, idx) => {
-        if (val > 0) max = Math.max(max, idx);
+        if (val >= 0) max = Math.max(max, idx);
       });
     });
     return max; 
@@ -59,11 +59,25 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
   const startIndex = 0;
   const endIndex = lastIndexWithData;
 
-  const getLimit = (subscriptionId: string) => {
+  const getRestrictionPct = (usageCode: string, dateIndex: number) => {
+     const r = restrictions.find(x => x.usageCode === usageCode);
+     if (!r || !r.periods) return 0;
+     const sorted = [...r.periods].sort((a,b) => a.startDate.localeCompare(b.startDate));
+     let pct = 0;
+     for(const p of sorted) {
+         if(getIndexFromDate(p.startDate) <= dateIndex) {
+             pct = p.percentage;
+         } else {
+             break;
+         }
+     }
+     return pct;
+  };
+
+  const getLimit = (subscriptionId: string, dateIndex: number) => {
     const industry = industries.find(i => i.subscriptionId === subscriptionId);
     if (!industry || !industry.baseMonthAvg) return 0;
-    const rest = restrictions.find(r => r.usageCode === industry.usageCode);
-    const pct = rest ? rest.percentage : 0;
+    const pct = getRestrictionPct(industry.usageCode, dateIndex);
     return industry.baseMonthAvg * (1 - pct / 100);
   };
 
@@ -80,13 +94,15 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
         const rec = consumption.find(c => c.subscriptionId === ind.subscriptionId);
         
         let lastVal = 0;
+        let lastIdx = -1;
         let hasData = false;
 
         if (rec) {
-            // Logic: find last non-zero value
+            // Logic: find last valid value (>=0)
             for(let i=rec.dailyConsumptions.length-1; i>=0; i--) {
-                if(rec.dailyConsumptions[i] > 0) {
+                if(rec.dailyConsumptions[i] >= 0) {
                     lastVal = rec.dailyConsumptions[i];
+                    lastIdx = i;
                     hasData = true;
                     break;
                 }
@@ -96,14 +112,13 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
         if (hasData) {
             hasDataCount++;
             totalLast += lastVal;
-            const rest = restrictions.find(r => r.usageCode === code);
-            const limit = (ind.baseMonthAvg || 0) * (1 - (rest?.percentage || 0) / 100);
+            // Limit at the specific time of this record
+            const limit = getLimit(ind.subscriptionId, lastIdx);
             if (lastVal > limit) violationCount++;
         }
       });
 
       const totalCount = groupIndustries.length;
-      // Compliance: Percentage of industries NOT in violation out of TOTAL industries.
       const compliancePct = totalCount > 0 ? ((totalCount - violationCount) / totalCount) * 100 : 0;
 
       return { 
@@ -135,7 +150,6 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
       const record = consumption.find(c => c.subscriptionId === id);
       if (!industry || !record) return null;
       
-      const limit = getLimit(id);
       let compliantDaysCount = 0;
       let violationDaysCount = 0;
       let totalCompliantVol = 0;
@@ -146,43 +160,48 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
       
       const daily = relevantData.map((val, idx) => {
         const dateStr = getDateFromIndex(startIndex + idx);
-        // Shorten date for chart (e.g., 09/28)
         const shortDate = dateStr.substring(5);
         
+        // Dynamic limit calculation
+        const limit = getLimit(id, startIndex + idx);
+        
         const isViolation = val > limit;
-        if (val > 0) {
+        if (val >= 0) {
              if (isViolation) { violationDaysCount++; totalViolationExcessVol += (val - limit); } 
              else { compliantDaysCount++; totalCompliantVol += val; }
         }
         return { 
-            name: shortDate, // For chart Axis
+            name: shortDate, 
             fullDate: dateStr,
-            usage: val, 
+            usage: val >= 0 ? val : null, // For chart gaps
             limit: limit, 
             isViolation: isViolation 
         };
       });
       
       let lastUsage = 0;
+      let lastLimit = 0;
       let lastDateLabel = '';
       
       // Find last valid usage
-      const lastEntry = daily.filter(d => d.usage > 0).pop();
+      const lastEntry = daily.filter(d => d.usage !== null).pop();
       if(lastEntry) {
-          lastUsage = lastEntry.usage;
+          lastUsage = lastEntry.usage as number;
+          lastLimit = lastEntry.limit;
           lastDateLabel = lastEntry.fullDate;
       } else {
           lastDateLabel = getDateFromIndex(endIndex);
+          lastLimit = getLimit(id, endIndex);
       }
       
       return {
         ...industry,
         baseAvg: industry.baseMonthAvg,
-        limit,
+        limit: lastLimit, // Current/Last effective limit
         lastUsage,
         lastDateLabel,
         daily,
-        isViolator: lastUsage > limit,
+        isViolator: lastUsage > lastLimit,
         metrics: { compliantDays: compliantDaysCount, violationDays: violationDaysCount, totalCompliantVol, totalViolationExcessVol }
       };
     }).filter((d): d is NonNullable<typeof d> => d !== null);
@@ -414,7 +433,7 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
                             <Card className="border-r-4 border-r-orange-500">
                                 <CardContent className="p-6">
                                     <div className="flex items-center gap-2 text-slate-500 mb-2">
-                                        <AlertTriangle size={18} /> <span className="text-sm font-bold uppercase">سقف مجاز</span>
+                                        <AlertTriangle size={18} /> <span className="text-sm font-bold uppercase">سقف مجاز (فعلی)</span>
                                     </div>
                                     <div className="text-3xl font-black text-orange-600">{Math.floor(single!.limit).toLocaleString()}</div>
                                 </CardContent>
@@ -467,14 +486,17 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
                                             </Bar>
                                         </BarChart>
                                     ) : (
-                                        <LineChart data={single!.daily} margin={{top: 20, right: 30, left: 20, bottom: 5}}>
+                                        <ComposedChart data={single!.daily} margin={{top: 20, right: 30, left: 20, bottom: 5}}>
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                                             <XAxis dataKey="name" tick={{fontSize: 12}} angle={-45} textAnchor="end" height={60} />
                                             <YAxis tick={{fontSize: 12}} />
-                                            <Tooltip formatter={(v) => v.toLocaleString()} contentStyle={{borderRadius: '8px', fontSize: '14px'}} />
-                                            <ReferenceLine y={single!.limit} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'سقف مجاز', fill: '#ef4444', fontSize: 12 }} />
-                                            <Line type="monotone" dataKey="usage" stroke="#3b82f6" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} name="مصرف روزانه" />
-                                        </LineChart>
+                                            <Tooltip 
+                                                formatter={(v: number | null) => v !== null ? v.toLocaleString() : 'بدون داده'} 
+                                                contentStyle={{borderRadius: '8px', fontSize: '14px'}} 
+                                            />
+                                            <Line type="step" dataKey="limit" stroke="#ef4444" strokeWidth={2} name="سقف مجاز (متغیر)" dot={false} />
+                                            <Line connectNulls type="monotone" dataKey="usage" stroke="#3b82f6" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} name="مصرف روزانه" />
+                                        </ComposedChart>
                                     )}
                                 </ResponsiveContainer>
                             </CardContent>
@@ -494,40 +516,35 @@ const Dashboard: React.FC<DashboardProps> = ({ industries, consumption, restrict
                                                     data={pieData}
                                                     cx="50%"
                                                     cy="50%"
-                                                    innerRadius={60}
+                                                    labelLine={false}
                                                     outerRadius={80}
-                                                    paddingAngle={5}
+                                                    fill="#8884d8"
                                                     dataKey="value"
                                                 >
                                                     {pieData.map((entry, index) => (
                                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                                     ))}
                                                 </Pie>
-                                                <Tooltip contentStyle={{fontSize: '14px'}} />
-                                                <Legend wrapperStyle={{fontSize: '12px'}} />
+                                                <Tooltip />
+                                                <Legend />
                                             </PieChart>
                                         </ResponsiveContainer>
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-2 gap-4 w-full">
-                                        <div className="bg-green-50 p-4 rounded-xl text-center border border-green-100">
-                                            <div className="text-3xl font-bold text-green-600">{single!.metrics.compliantDays}</div>
-                                            <div className="text-sm text-green-700 mt-1">روزهای رعایت</div>
-                                        </div>
-                                        <div className="bg-red-50 p-4 rounded-xl text-center border border-red-100">
-                                            <div className="text-3xl font-bold text-red-600">{single!.metrics.violationDays}</div>
-                                            <div className="text-sm text-red-700 mt-1">روزهای تخطی</div>
-                                        </div>
-                                        <div className="col-span-2 mt-2">
-                                            <h4 className="font-bold mb-3 text-base text-slate-700">وضعیت روزانه (Heatmap):</h4>
-                                            <div className="grid grid-cols-10 gap-2">
-                                                {single!.daily.map(d => (
-                                                    <div 
-                                                        key={d.name} 
-                                                        title={`تاریخ ${d.fullDate}: ${d.usage.toLocaleString()}`}
-                                                        className={`h-6 rounded-md shadow-sm border border-slate-200/50 ${d.usage === 0 ? 'bg-slate-100' : d.isViolation ? 'bg-red-500' : 'bg-green-500'}`}
-                                                    />
-                                                ))}
+                                    <div className="text-center space-y-4">
+                                        <div className="grid grid-cols-2 gap-4 text-sm">
+                                            <div className="bg-slate-50 p-3 rounded-lg border">
+                                                <span className="block text-slate-500 mb-1">روزهای دارای تخطی</span>
+                                                <span className="text-xl font-black text-red-600">{single!.metrics.violationDays}</span>
+                                            </div>
+                                            <div className="bg-slate-50 p-3 rounded-lg border">
+                                                <span className="block text-slate-500 mb-1">روزهای رعایت شده</span>
+                                                <span className="text-xl font-black text-green-600">{single!.metrics.compliantDays}</span>
+                                            </div>
+                                            <div className="col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                                <span className="block text-blue-600 mb-1">مجموع حجم تخطی (غیرمجاز)</span>
+                                                <span className="text-xl font-black text-blue-800">{single!.metrics.totalViolationExcessVol.toLocaleString()}</span>
+                                                <span className="text-xs text-blue-500 mr-1">متر مکعب</span>
                                             </div>
                                         </div>
                                     </div>

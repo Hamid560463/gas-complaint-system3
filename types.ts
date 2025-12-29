@@ -12,18 +12,32 @@ export interface Industry {
 
 export interface ConsumptionRecord {
   subscriptionId: string;
-  source: 'Faratrah' | 'RTU' | 'MeterReading' | 'File';
+  source: 'Faratrah' | 'RTU' | 'MeterReading' | 'File' | 'Manual';
   baseMonthAvg: number; // Kept for compatibility but logic should prefer Industry.baseMonthAvg
   dailyConsumptions: number[]; // Array of values (Day 1 to 31)
   lastRecordDate?: string; // e.g. "1404/10/02"
 }
 
-export interface Restriction {
-  usageCode: string;
+export interface RestrictionPeriod {
+  startDate: string; // e.g. "1404/09/28"
   percentage: number; // 0 to 100
 }
 
-export type ViewType = 'DASHBOARD' | 'DATA_ENTRY' | 'REPORTS' | 'SETTINGS' | 'EXECUTION_REPORTS' | 'HEADQUARTERS_REPORTS' | 'TARIFF_HISTORY';
+export interface Restriction {
+  usageCode: string;
+  periods: RestrictionPeriod[]; // Changed from single percentage to timeline
+}
+
+export interface SmsLog {
+  id: string;
+  subscriptionId: string;
+  date: string;
+  time: string;
+  message: string;
+  type: 'SENT' | 'REGISTERED'; // Sent via panel or just registered manually
+}
+
+export type ViewType = 'DASHBOARD' | 'DATA_ENTRY' | 'REPORTS' | 'SETTINGS' | 'EXECUTION_REPORTS' | 'HEADQUARTERS_REPORTS' | 'TARIFF_HISTORY' | 'SMS_PANEL';
 
 export interface DashboardState {
   selectedIds: string[];

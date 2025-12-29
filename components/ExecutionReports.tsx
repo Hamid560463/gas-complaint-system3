@@ -1,9 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { Industry, ConsumptionRecord, Restriction } from '../types';
-import { AlertTriangle, Gavel, Filter, Download, AlertOctagon, Ban, Settings2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Button } from './ui/Base';
+import { AlertTriangle, Gavel, Filter, Download, AlertOctagon, Ban, Settings2, ChevronLeft, ChevronRight, History, Calculator, CalendarClock, Search, Phone } from 'lucide-react';
+import { Button, Input, SelectWrapper } from './ui/Base';
 import * as XLSX from 'xlsx';
+import { getIndexFromDate } from '../services/dateUtils';
 
 interface ExecutionReportsProps {
   industries: Industry[];
@@ -11,51 +12,128 @@ interface ExecutionReportsProps {
   restrictions: Restriction[];
 }
 
+type AssessmentMethod = 'LAST' | 'SCORING';
+
 const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consumption, restrictions }) => {
+  // Assessment Method State
+  const [assessmentMethod, setAssessmentMethod] = useState<AssessmentMethod>('LAST');
+  const [scoringDays, setScoringDays] = useState<number>(3); // Default 3 consecutive days
+
   // Filters
   const [minViolationPct, setMinViolationPct] = useState<number>(0);
   const [actionFilter, setActionFilter] = useState<string>('ALL');
+  
+  // New Filters
+  const [searchText, setSearchText] = useState<string>('');
+  const [filterCity, setFilterCity] = useState<string>('ALL');
+  const [filterUsage, setFilterUsage] = useState<string>('ALL');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
   // Threshold Configuration
-  const [warningLimit, setWarningLimit] = useState<number>(20); // Up to 20% -> Warning
-  const [pressureLimit, setPressureLimit] = useState<number>(50); // 20% to 50% -> Pressure Reduction, > 50% -> Cutoff
+  const [warningLimit, setWarningLimit] = useState<number>(20); 
+  const [pressureLimit, setPressureLimit] = useState<number>(50); 
+
+  // Unique values for dropdowns (Trimmed)
+  const uniqueCities = useMemo(() => Array.from(new Set(industries.map(i => i.city ? i.city.trim() : ''))).filter(Boolean).sort(), [industries]);
+  const uniqueUsages = useMemo(() => Array.from(new Set(industries.map(i => i.usageCode))).filter(Boolean).sort(), [industries]);
+
+  // Helper to find percentage for a specific day index
+  const getRestrictionPct = (usageCode: string, dateIndex: number) => {
+     const r = restrictions.find(x => x.usageCode === usageCode);
+     if (!r || !r.periods) return 0;
+     
+     // Find relevant period
+     // Sort ascending
+     const sorted = [...r.periods].sort((a,b) => a.startDate.localeCompare(b.startDate));
+     let pct = 0;
+     for(const p of sorted) {
+         if(getIndexFromDate(p.startDate) <= dateIndex) {
+             pct = p.percentage;
+         } else {
+             break;
+         }
+     }
+     return pct;
+  };
 
   const reportData = useMemo(() => {
     return consumption.map(rec => {
       const industry = industries.find(i => i.subscriptionId === rec.subscriptionId);
       if (!industry || !industry.baseMonthAvg) return null;
 
-      const rest = restrictions.find(r => r.usageCode === industry.usageCode);
-      const percentage = rest ? rest.percentage : 0;
-      const limit = industry.baseMonthAvg * (1 - percentage / 100);
+      // Filter valid days (val >= 0 means data exists) with their index
+      const validHistory = rec.dailyConsumptions
+          .map((val, idx) => ({ val, index: idx }))
+          .filter(item => item.val >= 0)
+          .reverse(); // Newest first
 
-      // Determine last value logic
-      let lastValue = 0;
-      if (rec.lastRecordDate) {
-        const parts = rec.lastRecordDate.split('/');
-        const day = parseInt(parts[parts.length - 1], 10);
-        if (!isNaN(day) && day >= 1 && day <= 31) {
-          lastValue = rec.dailyConsumptions[day - 1];
-        }
+      let calculatedValue = 0;
+      let violationAmount = 0;
+      let violationPct = 0;
+      let isViolating = false;
+      let violationDetails = '';
+      let effectiveLimit = 0;
+
+      if (assessmentMethod === 'LAST') {
+          // --- Method 1: Last Recorded Consumption ---
+          if (validHistory.length > 0) {
+              const lastEntry = validHistory[0];
+              calculatedValue = lastEntry.val;
+              
+              // Calculate limit based on the date of this specific record
+              const pct = getRestrictionPct(industry.usageCode, lastEntry.index);
+              effectiveLimit = industry.baseMonthAvg * (1 - pct / 100);
+
+              if (calculatedValue > effectiveLimit) {
+                  isViolating = true;
+                  violationAmount = calculatedValue - effectiveLimit;
+                  violationPct = effectiveLimit > 0 ? (violationAmount / effectiveLimit) * 100 : 0;
+              }
+          }
       } else {
-        let maxDay = 0;
-        rec.dailyConsumptions.forEach((val, idx) => { if (val > 0) maxDay = idx + 1; });
-        if (maxDay > 0) lastValue = rec.dailyConsumptions[maxDay - 1];
+          // --- Method 2: Scoring (Consecutive Days) ---
+          if (validHistory.length >= scoringDays) {
+              // Check the last N days
+              const checkWindow = validHistory.slice(0, scoringDays);
+              
+              // Condition: ALL days in the window must be violations compared to THEIR OWN daily limit
+              const allOverLimit = checkWindow.every(item => {
+                  const dayPct = getRestrictionPct(industry.usageCode, item.index);
+                  const dayLimit = industry.baseMonthAvg * (1 - dayPct / 100);
+                  return item.val > dayLimit;
+              });
+
+              if (allOverLimit) {
+                  isViolating = true;
+                  
+                  // Calculate Average usage
+                  const sumUsage = checkWindow.reduce((acc, curr) => acc + curr.val, 0);
+                  calculatedValue = sumUsage / scoringDays;
+                  
+                  // Calculate Average Limit over these days for the final % metric
+                  const sumLimit = checkWindow.reduce((acc, curr) => {
+                       const dayPct = getRestrictionPct(industry.usageCode, curr.index);
+                       return acc + (industry.baseMonthAvg * (1 - dayPct / 100));
+                  }, 0);
+                  effectiveLimit = sumLimit / scoringDays;
+
+                  violationAmount = calculatedValue - effectiveLimit;
+                  violationPct = effectiveLimit > 0 ? (violationAmount / effectiveLimit) * 100 : 0;
+                  violationDetails = `میانگین ${scoringDays} روز متوالی`;
+              }
+          }
       }
 
-      const violationAmount = lastValue > limit ? lastValue - limit : 0;
-      const violationPct = limit > 0 ? (violationAmount / limit) * 100 : 0;
+      if (!isViolating) return null;
 
-      // Determine Action based on dynamic thresholds
+      // Determine Action
       let action = 'نرمال';
       let actionColor = 'text-green-600 bg-green-50';
       
-      if (violationAmount > 0) {
-        if (violationPct <= warningLimit) {
+      if (violationPct <= warningLimit) {
           action = 'اخطار کتبی';
           actionColor = 'text-yellow-700 bg-yellow-50';
         } else if (violationPct <= pressureLimit) {
@@ -64,7 +142,6 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
         } else {
           action = 'قطع گاز';
           actionColor = 'text-red-700 bg-red-50';
-        }
       }
 
       return {
@@ -72,23 +149,29 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
         name: industry.name,
         city: industry.city,
         usageCode: industry.usageCode,
-        allowed: limit,
-        lastUsage: lastValue,
+        phone: industry.phone,
+        allowed: effectiveLimit,
+        calculatedValue,
         violationAmount,
         violationPct,
         action,
-        actionColor
+        actionColor,
+        violationDetails
       };
     })
     .filter(item => item !== null)
-    .filter(item => item.violationAmount > 0) // Only show violators
-    .filter(item => item.violationPct >= minViolationPct)
+    // Apply Filters
     .filter(item => {
-        if (actionFilter === 'ALL') return true;
-        return item.action === actionFilter;
+        const matchesSearch = (item!.name || '').includes(searchText) || (item!.subscriptionId || '').includes(searchText);
+        const matchesCity = filterCity === 'ALL' || (item!.city && item!.city.trim() === filterCity);
+        const matchesUsage = filterUsage === 'ALL' || item!.usageCode === filterUsage;
+        const matchesAction = actionFilter === 'ALL' || item!.action === actionFilter;
+        const matchesMinPct = item!.violationPct >= minViolationPct;
+
+        return matchesSearch && matchesCity && matchesUsage && matchesAction && matchesMinPct;
     })
-    .sort((a, b) => b!.violationPct - a!.violationPct); // Sort by Percentage desc
-  }, [consumption, industries, restrictions, minViolationPct, actionFilter, warningLimit, pressureLimit]);
+    .sort((a, b) => b!.violationPct - a!.violationPct);
+  }, [consumption, industries, restrictions, minViolationPct, actionFilter, warningLimit, pressureLimit, assessmentMethod, scoringDays, searchText, filterCity, filterUsage]);
 
   const totalPages = Math.ceil(reportData.length / itemsPerPage);
   const paginatedData = useMemo(() => {
@@ -103,10 +186,12 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
       'شماره اشتراک': r!.subscriptionId,
       'شهر': r!.city,
       'کد تعرفه': r!.usageCode,
-      'سقف مجاز': Math.floor(r!.allowed),
-      'آخرین مصرف': r!.lastUsage,
+      'شماره تماس': r!.phone,
+      'سقف مجاز (موثر)': Math.floor(r!.allowed),
+      [assessmentMethod === 'LAST' ? 'آخرین مصرف' : `میانگین مصرف (${scoringDays} روز)`]: Math.floor(r!.calculatedValue),
       'میزان تخطی': Math.floor(r!.violationAmount),
       'درصد تخطی': r!.violationPct.toFixed(1) + '%',
+      'روش پایش': assessmentMethod === 'LAST' ? 'آخرین مصرف' : `توالی ${scoringDays} روز`,
       'اقدام اجرایی': r!.action
     }));
 
@@ -119,53 +204,148 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
+      {/* Assessment Method Selector */}
+      <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg no-print">
+         <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div>
+                <h3 className="text-xl font-bold flex items-center gap-2 text-blue-200">
+                   <Calculator size={24}/>
+                   انتخاب روش پایش و محاسبه تخلفات
+                </h3>
+                <p className="text-slate-400 text-sm mt-2 max-w-xl">
+                   نحوه شناسایی صنایع متخلف را مشخص کنید. می‌توانید بر اساس آخرین داده دریافتی تصمیم بگیرید یا سوابق چند روز اخیر را ملاک قرار دهید.
+                </p>
+            </div>
+            
+            <div className="flex bg-slate-800 p-1.5 rounded-xl border border-slate-700">
+               <button
+                  onClick={() => setAssessmentMethod('LAST')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all ${
+                     assessmentMethod === 'LAST' 
+                     ? 'bg-blue-600 text-white shadow-lg' 
+                     : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
+               >
+                  <History size={18} />
+                  پایش لحظه‌ای (آخرین مصرف)
+               </button>
+               <button
+                  onClick={() => setAssessmentMethod('SCORING')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all ${
+                     assessmentMethod === 'SCORING' 
+                     ? 'bg-amber-600 text-white shadow-lg' 
+                     : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
+               >
+                  <CalendarClock size={18} />
+                  پایش هوشمند (امتیاز توالی)
+               </button>
+            </div>
+         </div>
+         
+         {/* Extended Config for Scoring Method */}
+         {assessmentMethod === 'SCORING' && (
+            <div className="mt-6 pt-6 border-t border-slate-700/50 flex flex-col md:flex-row items-center gap-4 animate-in fade-in slide-in-from-top-2">
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-200 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+                    <AlertTriangle size={16} />
+                    در این روش، صنعت تنها در صورتی متخلف شناخته می‌شود که:
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-sm">به مدت</span>
+                    <div className="relative">
+                        <input 
+                            type="number" 
+                            min="2" max="10" 
+                            value={scoringDays}
+                            onChange={(e) => setScoringDays(Math.max(2, Number(e.target.value)))}
+                            className="w-20 h-12 bg-white border-2 border-slate-200 rounded-xl text-center font-black text-2xl text-slate-900 focus:ring-4 focus:ring-amber-500/50 outline-none shadow-lg"
+                        />
+                    </div>
+                    <span className="text-sm font-bold text-white">روز متوالی</span>
+                    <span className="text-sm">بیش از سقف مجاز مصرف کرده باشد.</span>
+                </div>
+            </div>
+         )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Controls */}
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 no-print space-y-6">
-          <div className="flex flex-col md:flex-row gap-6 items-end">
-            <div className="flex-1 w-full">
-              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                <AlertOctagon size={18} className="text-red-600" />
-                فیلتر حداقل درصد تخطی:
-              </label>
-              <div className="relative">
-                <input 
-                  type="number" 
-                  className="w-full p-3.5 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-red-500 outline-none font-bold text-lg ltr text-center"
-                  value={minViolationPct}
-                  onChange={e => { setMinViolationPct(Number(e.target.value)); setCurrentPage(1); }}
-                  placeholder="0"
-                />
-                <span className="absolute left-4 top-3.5 text-slate-400 font-bold">%</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Search */}
+              <div className="relative col-span-1 md:col-span-3">
+                    <Input 
+                        placeholder="جستجو نام واحد یا شماره اشتراک..." 
+                        value={searchText}
+                        onChange={(e) => { setSearchText(e.target.value); setCurrentPage(1); }}
+                        className="pl-9 h-11"
+                    />
+                    <Search className="absolute left-3 top-3.5 text-slate-400" size={16}/>
               </div>
-              <p className="text-xs text-slate-400 mt-2">نمایش صنایعی که بیش از این درصد تخطی داشته‌اند.</p>
-            </div>
-            
-            <div className="flex-1 w-full">
-              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-                <Filter size={18} className="text-blue-600" />
-                فیلتر نوع اقدام:
-              </label>
-              <select 
-                  className="w-full p-3.5 border rounded-xl bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none font-bold text-base"
-                  value={actionFilter}
-                  onChange={e => { setActionFilter(e.target.value); setCurrentPage(1); }}
-              >
-                  <option value="ALL">نمایش همه موارد</option>
-                  <option value="اخطار کتبی">اخطار کتبی</option>
-                  <option value="اعمال افت فشار">اعمال افت فشار</option>
-                  <option value="قطع گاز">قطع گاز</option>
-              </select>
-              <p className="text-xs text-slate-400 mt-2">فیلتر لیست بر اساس اقدام پیشنهادی.</p>
-            </div>
 
-            <button 
-              onClick={exportToExcel}
-              className="flex items-center gap-2 bg-green-600 text-white px-6 py-3.5 rounded-xl hover:bg-green-700 transition-all shadow-lg active:scale-95 font-bold whitespace-nowrap"
-            >
-              <Download size={20} />
-              <span>دانلود اکسل داخلی</span>
-            </button>
+              {/* Min Violation */}
+              <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2">حداقل درصد تخطی</label>
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      className="w-full h-10 border rounded-lg px-3 bg-slate-50 focus:ring-2 focus:ring-red-500 outline-none font-bold text-base ltr text-center"
+                      value={minViolationPct}
+                      onChange={e => { setMinViolationPct(Number(e.target.value)); setCurrentPage(1); }}
+                      placeholder="0"
+                    />
+                    <span className="absolute left-3 top-2 text-slate-400 font-bold">%</span>
+                  </div>
+              </div>
+            
+              {/* Action Filter */}
+              <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2">فیلتر نوع اقدام</label>
+                  <SelectWrapper 
+                      value={actionFilter}
+                      onChange={e => { setActionFilter(e.target.value); setCurrentPage(1); }}
+                  >
+                      <option value="ALL">همه موارد</option>
+                      <option value="اخطار کتبی">اخطار کتبی</option>
+                      <option value="اعمال افت فشار">اعمال افت فشار</option>
+                      <option value="قطع گاز">قطع گاز</option>
+                  </SelectWrapper>
+              </div>
+
+               {/* City Filter */}
+               <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2">فیلتر شهر</label>
+                  <SelectWrapper 
+                      value={filterCity}
+                      onChange={e => { setFilterCity(e.target.value); setCurrentPage(1); }}
+                  >
+                      <option value="ALL">همه شهرها</option>
+                      {uniqueCities.map(c => <option key={c} value={c}>{c}</option>)}
+                  </SelectWrapper>
+              </div>
+              
+              {/* Usage Filter */}
+               <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2">فیلتر کد مصرف</label>
+                  <SelectWrapper 
+                      value={filterUsage}
+                      onChange={e => { setFilterUsage(e.target.value); setCurrentPage(1); }}
+                  >
+                      <option value="ALL">همه تعرفه‌ها</option>
+                      {uniqueUsages.map(u => <option key={u} value={u}>{u}</option>)}
+                  </SelectWrapper>
+              </div>
+
+               {/* Export Button */}
+              <div className="md:col-span-1 flex items-end">
+                <button 
+                  onClick={exportToExcel}
+                  className="w-full flex items-center justify-center gap-2 bg-green-600 text-white h-10 rounded-lg hover:bg-green-700 transition-all shadow-sm active:scale-95 font-bold whitespace-nowrap"
+                >
+                  <Download size={18} />
+                  <span>دانلود اکسل</span>
+                </button>
+              </div>
           </div>
         </div>
 
@@ -223,10 +403,14 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
            <div className="flex items-center gap-4">
               <h3 className="font-black text-slate-800 flex items-center gap-2 text-xl">
                 <Gavel size={24} className="text-slate-900" />
-                لیست مشمولین اعمال محدودیت (نمای داخلی)
+                لیست مشمولین اعمال محدودیت
               </h3>
+              <span className={`px-3 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 ${assessmentMethod === 'LAST' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                {assessmentMethod === 'LAST' ? <History size={14}/> : <CalendarClock size={14}/>}
+                روش: {assessmentMethod === 'LAST' ? 'آخرین مصرف' : `میانگین ${scoringDays} روز توالی`}
+              </span>
               <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-sm font-bold">
-                {reportData.length} واحد شناسایی شد
+                {reportData.length} واحد
               </span>
            </div>
            
@@ -252,8 +436,12 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
                   <th className="p-5 font-bold">نام واحد صنعتی</th>
                   <th className="p-5 font-bold">شماره اشتراک</th>
                   <th className="p-5 font-bold">شهر</th>
-                  <th className="p-5 font-bold">سقف مجاز</th>
-                  <th className="p-5 font-bold">آخرین مصرف</th>
+                  <th className="p-5 font-bold">تعرفه</th>
+                  <th className="p-5 font-bold">شماره تماس</th>
+                  <th className="p-5 font-bold">سقف مجاز (موثر)</th>
+                  <th className="p-5 font-bold">
+                      {assessmentMethod === 'LAST' ? 'آخرین مصرف' : <span className="text-amber-300">میانگین دوره</span>}
+                  </th>
                   <th className="p-5 font-bold text-red-300">میزان تخطی</th>
                   <th className="p-5 font-bold text-center">اقدام پیشنهادی</th>
                 </tr>
@@ -264,8 +452,18 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
                     <td className="p-5 font-bold text-slate-800">{row!.name}</td>
                     <td className="p-5 font-mono text-slate-500">{row!.subscriptionId}</td>
                     <td className="p-5 text-slate-600">{row!.city}</td>
+                    <td className="p-5 text-slate-600 text-sm">{row!.usageCode}</td>
+                    <td className="p-5 font-mono text-slate-600 flex items-center gap-1">
+                        {row!.phone && <Phone size={12} className="opacity-50"/>}
+                        {row!.phone || '-'}
+                    </td>
                     <td className="p-5 font-mono text-slate-600">{Math.floor(row!.allowed).toLocaleString()}</td>
-                    <td className="p-5 font-mono text-blue-700 font-bold">{row!.lastUsage.toLocaleString()}</td>
+                    <td className="p-5 font-mono text-blue-700 font-bold">
+                        {Math.floor(row!.calculatedValue).toLocaleString()}
+                        {assessmentMethod === 'SCORING' && (
+                            <span className="block text-[10px] text-amber-600 font-normal mt-1 opacity-80">میانگین {scoringDays} روز</span>
+                        )}
+                    </td>
                     <td className="p-5 font-mono text-red-600 font-black text-xl">
                       {row!.violationPct.toFixed(1)}%
                       <span className="text-xs text-red-400 mr-1 block font-normal">({Math.floor(row!.violationAmount).toLocaleString()})</span>
@@ -318,7 +516,11 @@ const ExecutionReports: React.FC<ExecutionReportsProps> = ({ industries, consump
           <div className="p-16 text-center flex flex-col items-center text-slate-400">
             <AlertTriangle size={64} className="mb-4 opacity-20" />
             <p className="font-bold text-xl">با فیلترهای اعمال شده، هیچ واحدی یافت نشد.</p>
-            <p className="text-base mt-2">مقدار "حداقل درصد تخطی" را کاهش دهید یا فیلتر اقدام را تغییر دهید.</p>
+            {assessmentMethod === 'SCORING' && (
+                <p className="text-amber-600 mt-2 bg-amber-50 px-3 py-1 rounded text-sm border border-amber-100">
+                    نکته: در روش پایش هوشمند، صنعت باید حداقل {scoringDays} روز متوالی تخلف داشته باشد تا در لیست ظاهر شود.
+                </p>
+            )}
           </div>
         )}
       </div>

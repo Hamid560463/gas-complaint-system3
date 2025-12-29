@@ -1,17 +1,18 @@
 
 import React, { useState, useMemo } from 'react';
-import { Industry, ConsumptionRecord } from '../types';
+import { Industry, ConsumptionRecord, Restriction } from '../types';
 import { FileDown, Layers, Calendar, Database } from 'lucide-react';
 import { Button, Card, CardContent } from './ui/Base';
 import * as XLSX from 'xlsx';
-import { getDateFromIndex } from '../services/dateUtils';
+import { getDateFromIndex, getIndexFromDate } from '../services/dateUtils';
 
 interface TariffHistoryProps {
   industries: Industry[];
   consumption: ConsumptionRecord[];
+  restrictions: Restriction[];
 }
 
-const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption }) => {
+const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption, restrictions }) => {
   const [activeTab, setActiveTab] = useState<string>('');
 
   // 1. Extract Unique Tariffs (Usage Codes)
@@ -28,7 +29,7 @@ const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption }
     let maxIdx = 0;
     consumption.forEach(c => {
         c.dailyConsumptions.forEach((val, idx) => {
-            if (val > 0) maxIdx = Math.max(maxIdx, idx);
+            if (val >= 0) maxIdx = Math.max(maxIdx, idx);
         });
     });
 
@@ -42,6 +43,22 @@ const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption }
     }
     return cols;
   }, [consumption]);
+
+  // Helper to get restriction percentage for active tab
+  const getRestrictionPct = (usageCode: string, dateIndex: number) => {
+     const r = restrictions.find(x => x.usageCode === usageCode);
+     if (!r || !r.periods) return 0;
+     const sorted = [...r.periods].sort((a,b) => a.startDate.localeCompare(b.startDate));
+     let pct = 0;
+     for(const p of sorted) {
+         if(getIndexFromDate(p.startDate) <= dateIndex) {
+             pct = p.percentage;
+         } else {
+             break;
+         }
+     }
+     return pct;
+  };
 
   // 3. Prepare Data for Active Tab
   const activeData = useMemo(() => {
@@ -80,8 +97,9 @@ const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption }
 
             // Dynamic Columns
             dateColumns.forEach(col => {
-                const val = rec?.dailyConsumptions[col.index] || 0;
-                row[col.label] = val === 0 ? '' : val; // Empty string for cleaner look or 0
+                const val = rec?.dailyConsumptions[col.index];
+                // -1 means no data, show empty. 0 is valid.
+                row[col.label] = (val === undefined || val === -1) ? '' : val; 
             });
 
             return row;
@@ -167,6 +185,23 @@ const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption }
                             </th>
                         ))}
                     </tr>
+                    {/* Restriction Timeline Row */}
+                    <tr className="bg-slate-800 text-xs">
+                         <td colSpan={5} className="p-2 text-left pl-4 font-bold border-b border-slate-700 text-blue-300">
+                            درصد محدودیت مصوب:
+                         </td>
+                         {dateColumns.map(col => {
+                             const pct = getRestrictionPct(activeTab, col.index);
+                             const prevPct = col.index > 0 ? getRestrictionPct(activeTab, col.index - 1) : pct;
+                             const isChanged = col.index > 0 && pct !== prevPct;
+
+                             return (
+                                 <td key={`rest-${col.label}`} className={`p-2 text-center border-b border-slate-700 border-l border-slate-700/50 ${isChanged ? 'bg-slate-700 text-white font-bold' : 'text-slate-400'}`}>
+                                     {pct}%
+                                 </td>
+                             )
+                         })}
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                     {activeData.map((row, idx) => (
@@ -181,11 +216,12 @@ const TariffHistory: React.FC<TariffHistoryProps> = ({ industries, consumption }
                                 {row.industry.baseMonthAvg.toLocaleString()}
                             </td>
                             {dateColumns.map(col => {
-                                const val = row.record?.dailyConsumptions[col.index] || 0;
+                                const val = row.record?.dailyConsumptions[col.index];
+                                const hasData = val !== undefined && val >= 0;
                                 return (
                                     <td key={col.label} className="p-3 text-center border-l border-slate-100 font-mono">
-                                        {val > 0 ? (
-                                            <span className="font-bold text-slate-700">{val.toLocaleString()}</span>
+                                        {hasData ? (
+                                            <span className={`font-bold ${val === 0 ? 'text-slate-400' : 'text-slate-700'}`}>{val.toLocaleString()}</span>
                                         ) : (
                                             <span className="text-slate-300">-</span>
                                         )}

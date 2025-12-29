@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Industry, ConsumptionRecord, Restriction, ViewType } from './types';
+import { Industry, ConsumptionRecord, Restriction, ViewType, SmsLog } from './types';
 import { storageService } from './services/storageService';
 import Dashboard from './components/Dashboard';
 import DataManagement from './components/DataManagement';
@@ -9,15 +9,18 @@ import Settings from './components/Settings';
 import ExecutionReports from './components/ExecutionReports';
 import HeadquartersReports from './components/HeadquartersReports';
 import TariffHistory from './components/TariffHistory';
+import SmsPanel from './components/SmsPanel';
 import Help from './components/Help';
-import { LayoutDashboard, FileSpreadsheet, Settings as SettingsIcon, BarChart3, Copyright, Printer, ClipboardList, Building2, Flame, HelpCircle, History } from 'lucide-react';
+import { LayoutDashboard, FileSpreadsheet, Settings as SettingsIcon, BarChart3, Copyright, Printer, ClipboardList, Building2, Flame, HelpCircle, History, MessageSquare } from 'lucide-react';
 import { Skeleton, Button } from './components/ui/Base';
+import { START_DATE } from './services/dateUtils';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType | 'HELP'>('DASHBOARD');
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [consumptionRecords, setConsumptionRecords] = useState<ConsumptionRecord[]>([]);
   const [restrictions, setRestrictions] = useState<Restriction[]>([]);
+  const [smsLogs, setSmsLogs] = useState<SmsLog[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   
   // New State for Dashboard focus
@@ -28,10 +31,11 @@ const App: React.FC = () => {
     const loadAllData = async () => {
       setTimeout(async () => {
         try {
-          const [inds, cons, rests] = await Promise.all([
+          const [inds, cons, rests, logs] = await Promise.all([
             storageService.getIndustries(),
             storageService.getConsumption(),
-            storageService.getRestrictions()
+            storageService.getRestrictions(),
+            storageService.getSmsLogs()
           ]);
           
           const mapLegacyCode = (code: string) => {
@@ -52,14 +56,18 @@ const App: React.FC = () => {
               usageCode: mapLegacyCode(i.usageCode)
           }));
 
-          const migratedRestrictions = rests.map(r => ({
-              ...r,
-              usageCode: mapLegacyCode(r.usageCode)
+          // Migration logic for Restrictions: Convert single percentage to periods array
+          const migratedRestrictions = rests.map((r: any) => ({
+              usageCode: mapLegacyCode(r.usageCode),
+              periods: r.periods && Array.isArray(r.periods) 
+                ? r.periods 
+                : [{ startDate: START_DATE, percentage: r.percentage || 0 }]
           }));
           
           setIndustries(migratedIndustries);
           setConsumptionRecords(cons);
           setRestrictions(migratedRestrictions);
+          setSmsLogs(logs || []);
           
           if (migratedIndustries.length > 0 && selectedIds.length === 0) {
             setSelectedIds([migratedIndustries[0].subscriptionId]);
@@ -78,6 +86,7 @@ const App: React.FC = () => {
   useEffect(() => { if (isLoaded) storageService.saveIndustries(industries); }, [industries, isLoaded]);
   useEffect(() => { if (isLoaded) storageService.saveConsumption(consumptionRecords); }, [consumptionRecords, isLoaded]);
   useEffect(() => { if (isLoaded) storageService.saveRestrictions(restrictions); }, [restrictions, isLoaded]);
+  useEffect(() => { if (isLoaded) storageService.saveSmsLogs(smsLogs); }, [smsLogs, isLoaded]);
 
   const renderView = () => {
     switch (currentView) {
@@ -87,7 +96,8 @@ const App: React.FC = () => {
       case 'REPORTS': return <Reports industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
       case 'EXECUTION_REPORTS': return <ExecutionReports industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
       case 'HEADQUARTERS_REPORTS': return <HeadquartersReports industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
-      case 'TARIFF_HISTORY': return <TariffHistory industries={industries} consumption={consumptionRecords} />;
+      case 'TARIFF_HISTORY': return <TariffHistory industries={industries} consumption={consumptionRecords} restrictions={restrictions} />;
+      case 'SMS_PANEL': return <SmsPanel industries={industries} consumption={consumptionRecords} restrictions={restrictions} smsLogs={smsLogs} setSmsLogs={setSmsLogs} />;
       case 'SETTINGS': return <Settings restrictions={restrictions} setRestrictions={setRestrictions} industries={industries} />;
       case 'HELP': return <Help />;
       default: return <Dashboard industries={industries} consumption={consumptionRecords} restrictions={restrictions} selectedIds={selectedIds} onSelectIds={setSelectedIds} />;
@@ -105,6 +115,7 @@ const App: React.FC = () => {
     { id: 'SETTINGS', label: 'تنظیمات محدودیت', icon: SettingsIcon },
     { id: 'EXECUTION_REPORTS', label: 'پایش و تخلفات', icon: ClipboardList },
     { id: 'HEADQUARTERS_REPORTS', label: 'گزارشات ستاد', icon: Building2 },
+    { id: 'SMS_PANEL', label: 'پیامک اخطار', icon: MessageSquare },
     { id: 'REPORTS', label: 'خروجی نهایی', icon: BarChart3 },
     { id: 'HELP', label: 'راهنمای سیستم', icon: HelpCircle },
   ];

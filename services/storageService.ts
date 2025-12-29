@@ -1,11 +1,12 @@
 
-import { Industry, ConsumptionRecord, Restriction } from '../types';
+import { Industry, ConsumptionRecord, Restriction, SmsLog } from '../types';
 
 // These keys will be used as filenames (e.g., industries.json) in the Electron backend
 const STORAGE_KEYS = {
   INDUSTRIES: 'industries',
   CONSUMPTION: 'consumption',
-  RESTRICTIONS: 'restrictions'
+  RESTRICTIONS: 'restrictions',
+  SMS_LOGS: 'sms_logs'
 };
 
 export const storageService = {
@@ -59,6 +60,24 @@ export const storageService = {
       return data || [];
     } else {
       const data = localStorage.getItem(STORAGE_KEYS.RESTRICTIONS);
+      return data ? JSON.parse(data) : [];
+    }
+  },
+
+  saveSmsLogs: async (data: SmsLog[]) => {
+    if (window.electronAPI) {
+      await window.electronAPI.saveData(STORAGE_KEYS.SMS_LOGS, data);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.SMS_LOGS, JSON.stringify(data));
+    }
+  },
+
+  getSmsLogs: async (): Promise<SmsLog[]> => {
+    if (window.electronAPI) {
+      const data = await window.electronAPI.loadData(STORAGE_KEYS.SMS_LOGS);
+      return data || [];
+    } else {
+      const data = localStorage.getItem(STORAGE_KEYS.SMS_LOGS);
       return data ? JSON.parse(data) : [];
     }
   }

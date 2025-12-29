@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { Industry, ConsumptionRecord } from '../types';
 import * as XLSX from 'xlsx';
 import { FolderOpen, Edit, XCircle, CheckCircle, Trash2, UploadCloud, Database, FileText, Eye, AlertCircle, Search, Save, Grid, CalendarDays, Calculator, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
-import { Button, Input, Card, CardContent, CardHeader, CardTitle, Table, TableHeader, TableRow, TableHead, TableCell } from './ui/Base';
+import { Button, Input, Card, CardContent, CardHeader, CardTitle, Table, TableHeader, TableRow, TableHead, TableCell, SelectWrapper } from './ui/Base';
 import { getIndexFromDate, getDateFromIndex, START_DATE, getMonthName } from '../services/dateUtils';
 
 interface DataManagementProps {
@@ -19,8 +19,10 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
   const [manualIndustry, setManualIndustry] = useState<Partial<Industry>>({});
   const [isEditing, setIsEditing] = useState(false);
   
-  // Master List State (Search & Pagination)
+  // Master List State (Search & Pagination & Filters)
   const [masterSearchTerm, setMasterSearchTerm] = useState('');
+  const [masterFilterCity, setMasterFilterCity] = useState('ALL');
+  const [masterFilterUsage, setMasterFilterUsage] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
@@ -37,8 +39,12 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
   const [previewData, setPreviewData] = useState<any[] | null>(null);
   const [previewType, setPreviewType] = useState<'MASTER' | 'CONSUMPTION' | null>(null);
 
+  // Extract unique values for filters (Trimmed)
+  const uniqueCities = useMemo(() => Array.from(new Set(industries.map(i => i.city ? i.city.trim() : ''))).filter(Boolean).sort(), [industries]);
+  const uniqueUsages = useMemo(() => Array.from(new Set(industries.map(i => i.usageCode))).filter(Boolean).sort(), [industries]);
+
   const mapUsageCode = (rawCode: string) => {
-    const c = rawCode.trim();
+    const c = rawCode ? String(rawCode).trim() : '';
     switch(c) {
       case '7': return 'تعرفه 7 (کاشی و سرامیک)';
       case '10': return 'تعرفه 10 (گچ و آهک)';
@@ -55,15 +61,20 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
       alert('لطفاً نام و شماره اشتراک را وارد کنید.');
       return;
     }
+    const industryToSave = {
+        ...manualIndustry,
+        city: manualIndustry.city ? manualIndustry.city.trim() : ''
+    };
+
     if (isEditing) {
-      setIndustries(prev => prev.map(item => item.subscriptionId === manualIndustry.subscriptionId ? manualIndustry as Industry : item));
+      setIndustries(prev => prev.map(item => item.subscriptionId === industryToSave.subscriptionId ? industryToSave as Industry : item));
       setIsEditing(false);
     } else {
-      if (industries.some(i => i.subscriptionId === manualIndustry.subscriptionId)) {
+      if (industries.some(i => i.subscriptionId === industryToSave.subscriptionId)) {
         alert('این شماره اشتراک قبلاً ثبت شده است.');
         return;
       }
-      setIndustries([...industries, manualIndustry as Industry]);
+      setIndustries([...industries, industryToSave as Industry]);
     }
     setManualIndustry({});
   };
@@ -83,11 +94,15 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
 
   // --- Master Data Pagination Logic ---
   const filteredIndustries = useMemo(() => {
-    return industries.filter(ind => 
-      (ind.name || '').toLowerCase().includes(masterSearchTerm.toLowerCase()) ||
-      (ind.subscriptionId || '').includes(masterSearchTerm)
-    );
-  }, [industries, masterSearchTerm]);
+    return industries.filter(ind => {
+      const matchSearch = (ind.name || '').toLowerCase().includes(masterSearchTerm.toLowerCase()) ||
+                          (ind.subscriptionId || '').includes(masterSearchTerm);
+      const matchCity = masterFilterCity === 'ALL' || (ind.city && ind.city.trim() === masterFilterCity);
+      const matchUsage = masterFilterUsage === 'ALL' || ind.usageCode === masterFilterUsage;
+
+      return matchSearch && matchCity && matchUsage;
+    });
+  }, [industries, masterSearchTerm, masterFilterCity, masterFilterUsage]);
 
   const totalPages = Math.ceil(filteredIndustries.length / itemsPerPage);
   const paginatedIndustries = useMemo(() => {
@@ -98,22 +113,23 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
   // Reset page when filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [masterSearchTerm, itemsPerPage]);
+  }, [masterSearchTerm, masterFilterCity, masterFilterUsage, itemsPerPage]);
 
 
   // --- Consumption Editing Logic ---
   const handleEditConsumption = (record: ConsumptionRecord) => {
     setEditingConsumption(record);
-    // Ensure array is large enough for the season (approx 100 days)
+    // Ensure array is large enough for the season (approx 120 days)
     const values = [...record.dailyConsumptions];
-    if (values.length < 100) {
-        for(let i=values.length; i<100; i++) values.push(0);
+    if (values.length < 120) {
+        // Fill new slots with -1 (No Data)
+        for(let i=values.length; i<120; i++) values.push(-1);
     }
     setTempDailyValues(values);
     
     // Auto-select the month with the latest data, or default to Azar if empty
     let lastDataIdx = -1;
-    values.forEach((v, i) => { if (v > 0) lastDataIdx = i; });
+    values.forEach((v, i) => { if (v >= 0) lastDataIdx = i; });
     
     if (lastDataIdx > -1) {
         const date = getDateFromIndex(lastDataIdx);
@@ -126,9 +142,13 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
   };
 
   const handleDailyValueChange = (dayIndex: number, value: string) => {
-    const numValue = Number(value);
     const newValues = [...tempDailyValues];
-    newValues[dayIndex] = isNaN(numValue) ? 0 : numValue;
+    if (value === '') {
+        newValues[dayIndex] = -1; // -1 represents No Data
+    } else {
+        const numValue = Number(value);
+        newValues[dayIndex] = isNaN(numValue) ? -1 : numValue;
+    }
     setTempDailyValues(newValues);
   };
 
@@ -137,7 +157,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
 
     // Recalculate last record date based on max index with data
     let maxIdx = -1;
-    tempDailyValues.forEach((val, idx) => { if (val > 0) maxIdx = idx; });
+    tempDailyValues.forEach((val, idx) => { if (val >= 0) maxIdx = idx; });
     
     let newDateStr = editingConsumption.lastRecordDate;
     if (maxIdx >= 0) {
@@ -150,7 +170,14 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
         lastRecordDate: newDateStr
     };
 
-    setConsumption(prev => prev.map(c => c.subscriptionId === editingConsumption.subscriptionId ? updatedRecord : c));
+    setConsumption(prev => {
+        const exists = prev.some(c => c.subscriptionId === editingConsumption.subscriptionId);
+        if (exists) {
+            return prev.map(c => c.subscriptionId === editingConsumption.subscriptionId ? updatedRecord : c);
+        } else {
+            return [...prev, updatedRecord];
+        }
+    });
     setEditingConsumption(null);
   };
 
@@ -167,10 +194,23 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
       return indices;
   };
 
-  // Calculate totals
-  const totalSum = tempDailyValues.reduce((a, b) => a + b, 0);
+  // Calculate totals (Ignore -1)
+  const totalSum = tempDailyValues.reduce((a, b) => a + (b >= 0 ? b : 0), 0);
   const currentMonthIndices = useMemo(() => getIndicesForMonth(editingMonthTab), [editingMonthTab, tempDailyValues]);
-  const currentMonthSum = currentMonthIndices.reduce((acc, idx) => acc + (tempDailyValues[idx] || 0), 0);
+  const currentMonthSum = currentMonthIndices.reduce((acc, idx) => acc + (tempDailyValues[idx] >= 0 ? tempDailyValues[idx] : 0), 0);
+
+  // --- Helper for fuzzy key matching ---
+  const findValue = (row: any, keys: string[]): any => {
+     for (const key of keys) {
+        if (row[key] !== undefined) return row[key];
+     }
+     const rowKeys = Object.keys(row);
+     for (const key of keys) {
+        const found = rowKeys.find(rk => rk.trim() === key.trim() || rk.includes(key));
+        if (found) return row[found];
+     }
+     return undefined;
+  };
 
   // --- File Upload Logic ---
   const handleFileUpload = (type: 'MASTER' | 'CONSUMPTION', e: React.ChangeEvent<HTMLInputElement>) => {
@@ -187,32 +227,45 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
       if (type === 'MASTER') {
-        const newIndustries = jsonData.map((row: any) => ({
-          subscriptionId: String(row['شماره اشتراک'] || row['subscriptionId'] || ''),
-          name: row['ایستگاه'] || row['name'] || '',
-          city: row['شهر'] || row['city'] || '',
-          usageCode: mapUsageCode(String(row['کد مصرف'] || row['usageCode'] || '')),
-          stationCapacity: Number(row['ظرفیت ایستگاه'] || row['stationCapacity'] || 0),
-          address: row['آدرس'] || row['address'] || (row['شهر'] || ''),
-          phone: String(row['موبایل'] || row['phone'] || ''),
-          baseMonthAvg: Number(row['متوسط مصرف روزانه آبان'] || row['baseMonthAvg'] || 0)
-        })).filter(i => i.subscriptionId && i.name);
+        const newIndustries = jsonData.map((row: any) => {
+          const subId = findValue(row, ['شماره اشتراک', 'اشتراک', 'کد اشتراک', 'subscriptionId', 'SubID', 'شناسه قبض']);
+          const name = findValue(row, ['ایستگاه', 'نام', 'نام واحد', 'نام شرکت', 'مشترک', 'name', 'Customer', 'نام مشترک']);
+          const city = findValue(row, ['شهر', 'ناحیه', 'منطقه', 'city', 'Town']);
+          const usageCode = findValue(row, ['کد مصرف', 'تعرفه', 'نوع مصرف', 'usageCode', 'Tariff', 'کد']);
+          const capacity = findValue(row, ['ظرفیت', 'ظرفیت ایستگاه', 'stationCapacity', 'Capacity']);
+          const phone = findValue(row, ['موبایل', 'تلفن', 'شماره تماس', 'phone', 'Mobile', 'Cell']);
+          const baseAvg = findValue(row, ['متوسط مصرف روزانه آبان', 'مصرف آبان', 'میانگین', 'پایه', 'baseMonthAvg', 'Avg', 'Average', 'مصرف']);
+          
+          return {
+            subscriptionId: String(subId || ''),
+            name: name || '',
+            city: String(city || '').trim(), // Trim city on import
+            usageCode: mapUsageCode(String(usageCode || '')),
+            stationCapacity: Number(capacity || 0),
+            address: row['آدرس'] || row['address'] || (city || ''),
+            phone: String(phone || ''),
+            baseMonthAvg: Number(baseAvg || 0)
+          };
+        }).filter(i => i.subscriptionId && i.subscriptionId !== 'undefined' && i.name);
+
+        if (newIndustries.length === 0) {
+            alert('هیچ داده معتبری یافت نشد. لطفاً نام ستون‌های فایل اکسل را بررسی کنید. (مثال: نام، اشتراک، تعرفه، ظرفیت)');
+        }
         setPreviewData(newIndustries);
         setPreviewType('MASTER');
       } else {
         const newRecords = jsonData.map((row: any) => {
-            const subId = String(row['شماره اشتراک'] || row['subscriptionId'] || '');
-            // Initialize with 120 days to cover end of year comfortably
-            const dailyData: number[] = new Array(120).fill(0);
+            const subId = findValue(row, ['شماره اشتراک', 'اشتراک', 'کد اشتراک', 'subscriptionId', 'SubID']);
+            
+            // Initialize with -1 (No Data)
+            const dailyData: number[] = new Array(120).fill(-1);
             let maxDate = '';
             
             Object.keys(row).forEach(key => {
-              // Try to parse key as date
               let idx = -1;
               if (key.includes('/') || key.includes('-')) {
                   idx = getIndexFromDate(key);
               } else {
-                  // Fallback for "1", "2" headers? 
                   const num = parseInt(key, 10);
                   if (!isNaN(num) && num > 0 && num < 100) {
                       idx = num - 1; 
@@ -221,25 +274,34 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
 
               if (idx >= 0 && idx < dailyData.length) {
                 let rawVal = row[key];
-                if (typeof rawVal === 'string') rawVal = rawVal.replace('/', '.').replace(/,/g, '');
-                const numVal = Number(rawVal);
-                if (!isNaN(numVal)) {
-                    dailyData[idx] = numVal;
-                    // Update max date
-                    const currentDate = getDateFromIndex(idx);
-                    if (!maxDate || currentDate.localeCompare(maxDate) > 0) maxDate = currentDate;
+                
+                // Important: Check if cell is genuinely empty
+                if (rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== '') {
+                    if (typeof rawVal === 'string') rawVal = rawVal.replace('/', '.').replace(/,/g, '');
+                    const numVal = Number(rawVal);
+                    if (!isNaN(numVal)) {
+                        dailyData[idx] = numVal;
+                        // Update max date
+                        const currentDate = getDateFromIndex(idx);
+                        if (!maxDate || currentDate.localeCompare(maxDate) > 0) maxDate = currentDate;
+                    }
                 }
               }
             });
 
             return {
-                subscriptionId: subId,
+                subscriptionId: String(subId || ''),
                 source: 'File',
                 baseMonthAvg: 0,
                 dailyConsumptions: dailyData,
                 lastRecordDate: maxDate
             };
-        }).filter(r => r.subscriptionId && r.dailyConsumptions.some(d => d > 0)); 
+        }).filter(r => r.subscriptionId && r.subscriptionId !== 'undefined' && r.dailyConsumptions.some(d => d >= 0)); 
+        
+        if (newRecords.length === 0) {
+             alert('داده‌ای یافت نشد. اطمینان حاصل کنید ستون "اشتراک" یا "شماره اشتراک" در فایل وجود دارد.');
+        }
+
         setPreviewData(newRecords);
         setPreviewType('CONSUMPTION');
       }
@@ -267,15 +329,16 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                 const oldData = merged[index].dailyConsumptions;
                 const newData = newItem.dailyConsumptions;
                 const maxLength = Math.max(oldData.length, newData.length);
-                const mergedDaily = new Array(maxLength).fill(0);
+                const mergedDaily = new Array(maxLength).fill(-1);
                 for(let i=0; i<maxLength; i++) {
-                    mergedDaily[i] = newData[i] > 0 ? newData[i] : (oldData[i] || 0);
+                    // Overwrite logic: if newData has data (>=0), use it. Else keep old data if exists.
+                    mergedDaily[i] = newData[i] >= 0 ? newData[i] : (oldData[i] >= 0 ? oldData[i] : -1);
                 }
                 merged[index] = { 
                     ...merged[index], 
                     dailyConsumptions: mergedDaily, 
                     source: 'File', 
-                    lastRecordDate: newItem.lastRecordDate.localeCompare(merged[index].lastRecordDate || '') > 0 ? newItem.lastRecordDate : merged[index].lastRecordDate 
+                    lastRecordDate: newItem.lastRecordDate && newItem.lastRecordDate.localeCompare(merged[index].lastRecordDate || '') > 0 ? newItem.lastRecordDate : merged[index].lastRecordDate 
                 };
             }
             else merged.push(newItem);
@@ -390,8 +453,9 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                                           </label>
                                           <input 
                                               type="number"
-                                              className={`w-full text-center text-lg font-mono font-bold outline-none bg-transparent h-7 ${val > 0 ? 'text-blue-700' : 'text-slate-300'}`}
-                                              value={val}
+                                              className={`w-full text-center text-lg font-mono font-bold outline-none bg-transparent h-7 ${val >= 0 ? (val === 0 ? 'text-slate-400' : 'text-blue-700') : 'text-transparent'}`}
+                                              placeholder={val === -1 ? "-" : ""}
+                                              value={val === -1 ? '' : val}
                                               onChange={(e) => handleDailyValueChange(idx, e.target.value)}
                                               onFocus={(e) => e.target.select()}
                                           />
@@ -477,7 +541,7 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                                       ) : (
                                           <>
                                               <TableCell>{row.lastRecordDate || '-'}</TableCell>
-                                              <TableCell>{row.dailyConsumptions.filter((v: number) => v > 0).length}</TableCell>
+                                              <TableCell>{row.dailyConsumptions.filter((v: number) => v >= 0).length}</TableCell>
                                           </>
                                       )}
                                   </TableRow>
@@ -532,38 +596,53 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
           </Card>
           
           {/* Master List Controls */}
-          <div className="flex flex-col md:flex-row justify-between items-end gap-4">
-             <div className="w-full md:w-auto flex-1 flex gap-4 items-end">
-                <div className="flex-1 max-w-md relative">
-                   <h3 className="font-bold text-lg mb-2">لیست صنایع ({filteredIndustries.length} مورد)</h3>
-                   <div className="relative">
-                      <Input 
-                          placeholder="جستجو نام یا شماره اشتراک..." 
-                          value={masterSearchTerm}
-                          onChange={(e) => setMasterSearchTerm(e.target.value)}
-                          className="pl-10 h-11"
-                      />
-                      <Search className="absolute left-3 top-3 text-slate-400" size={16} />
+          <div className="flex flex-col gap-4">
+               <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                    <h3 className="font-bold text-lg flex items-center gap-2">
+                       لیست صنایع <span className="text-sm bg-slate-100 px-2 py-1 rounded text-slate-500">({filteredIndustries.length} مورد)</span>
+                    </h3>
+                    <div className="relative">
+                          <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".xlsx, .xls" onChange={e => handleFileUpload('MASTER', e)} />
+                          <Button variant="secondary" className="gap-2 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 h-11"><UploadCloud size={16} /> بارگذاری اکسل</Button>
+                    </div>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                   <div className="relative md:col-span-1">
+                        <label className="text-xs font-bold text-slate-500 mb-1 block">جستجو</label>
+                        <div className="relative">
+                           <Input 
+                               placeholder="نام یا شماره اشتراک..." 
+                               value={masterSearchTerm}
+                               onChange={(e) => setMasterSearchTerm(e.target.value)}
+                               className="pl-8"
+                           />
+                           <Search className="absolute left-2.5 top-2.5 text-slate-400" size={16} />
+                        </div>
                    </div>
-                </div>
-                <div>
-                   <label className="block text-xs font-bold text-slate-500 mb-2">نمایش در هر صفحه</label>
-                   <select 
-                      className="h-11 border rounded-lg px-2 bg-white outline-none focus:ring-2 focus:ring-slate-900"
-                      value={itemsPerPage}
-                      onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                   >
-                      <option value={20}>20 مورد</option>
-                      <option value={50}>50 مورد</option>
-                      <option value={100}>100 مورد</option>
-                   </select>
-                </div>
-             </div>
-             
-             <div className="relative">
-               <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".xlsx, .xls" onChange={e => handleFileUpload('MASTER', e)} />
-               <Button variant="secondary" className="gap-2 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 h-11"><UploadCloud size={16} /> بارگذاری اکسل</Button>
-             </div>
+                   <div>
+                        <label className="text-xs font-bold text-slate-500 mb-1 block">فیلتر شهر</label>
+                        <SelectWrapper value={masterFilterCity} onChange={e => setMasterFilterCity(e.target.value)}>
+                           <option value="ALL">همه شهرها</option>
+                           {uniqueCities.map(c => <option key={c} value={c}>{c}</option>)}
+                        </SelectWrapper>
+                   </div>
+                   <div>
+                        <label className="text-xs font-bold text-slate-500 mb-1 block">فیلتر تعرفه</label>
+                        <SelectWrapper value={masterFilterUsage} onChange={e => setMasterFilterUsage(e.target.value)}>
+                           <option value="ALL">همه تعرفه‌ها</option>
+                           {uniqueUsages.map(u => <option key={u} value={u}>{u}</option>)}
+                        </SelectWrapper>
+                   </div>
+                   <div>
+                        <label className="text-xs font-bold text-slate-500 mb-1 block">تعداد نمایش</label>
+                        <SelectWrapper value={itemsPerPage} onChange={e => setItemsPerPage(Number(e.target.value))}>
+                            <option value={20}>20 مورد</option>
+                            <option value={50}>50 مورد</option>
+                            <option value={100}>100 مورد</option>
+                        </SelectWrapper>
+                   </div>
+               </div>
           </div>
 
           <Card>
@@ -581,8 +660,27 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                     <TableCell className="bg-amber-50/30 font-bold">{ind.baseMonthAvg ? ind.baseMonthAvg.toLocaleString() : '-'}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => handleEdit(ind)} className="h-8 w-8 p-0 text-blue-600"><Edit size={14} /></Button>
-                        <Button variant="ghost" size="sm" onClick={() => { if (window.confirm('حذف شود؟')) { setIndustries(industries.filter(i => i.subscriptionId !== ind.subscriptionId)); if (isEditing && manualIndustry.subscriptionId === ind.subscriptionId) handleCancelEdit(); } }} className="h-8 w-8 p-0 text-red-500"><Trash2 size={14} /></Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleEdit(ind)} className="h-8 w-8 p-0 text-blue-600" title="ویرایش اطلاعات پایه"><Edit size={14} /></Button>
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => {
+                                const existing = consumption.find(c => c.subscriptionId === ind.subscriptionId);
+                                const rec: ConsumptionRecord = existing || {
+                                    subscriptionId: ind.subscriptionId,
+                                    source: 'Manual',
+                                    baseMonthAvg: ind.baseMonthAvg,
+                                    dailyConsumptions: new Array(120).fill(-1),
+                                    lastRecordDate: ''
+                                };
+                                handleEditConsumption(rec);
+                            }} 
+                            className="h-8 w-8 p-0 text-green-600"
+                            title="ویرایش داده‌های مصرف"
+                        >
+                            <Grid size={14} />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => { if (window.confirm('حذف شود؟')) { setIndustries(industries.filter(i => i.subscriptionId !== ind.subscriptionId)); if (isEditing && manualIndustry.subscriptionId === ind.subscriptionId) handleCancelEdit(); } }} className="h-8 w-8 p-0 text-red-500" title="حذف صنعت"><Trash2 size={14} /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -671,15 +769,14 @@ const DataManagement: React.FC<DataManagementProps> = ({ industries, setIndustri
                     <TableCell className="font-bold text-slate-700">{industryName}</TableCell>
                     <TableCell className="font-mono">{cons.subscriptionId}</TableCell>
                     <TableCell>{cons.source}</TableCell>
-                    <TableCell>{cons.dailyConsumptions.filter(v => v > 0).length} روز</TableCell>
+                    <TableCell>{cons.dailyConsumptions.filter(v => v >= 0).length} روز</TableCell>
                     <TableCell className="text-xs text-slate-500" dir="ltr">{cons.lastRecordDate || '-'}</TableCell>
                     <TableCell className="font-bold text-blue-600 font-mono">
                        {(() => {
                          if (cons.lastRecordDate) {
-                           // Use last index logic instead of parsing date tail
-                           // Find last non-zero index
+                           // Find last valid index
                            let lastIdx = -1;
-                           cons.dailyConsumptions.forEach((v, i) => { if(v > 0) lastIdx = i; });
+                           cons.dailyConsumptions.forEach((v, i) => { if(v >= 0) lastIdx = i; });
                            if (lastIdx !== -1) return cons.dailyConsumptions[lastIdx].toLocaleString();
                          }
                          return 0;

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Industry, ConsumptionRecord, Restriction } from '../types';
-import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, ComposedChart } from 'recharts';
 import { Calendar, ArrowDownUp, Info, BarChart3, FileDown, CheckSquare, Square, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Button, Card, CardContent } from './ui/Base';
@@ -27,7 +27,7 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(50); // Default to 50 for large reports
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
   // Column Visibility State
   const [visibleColumns, setVisibleColumns] = useState({
@@ -44,15 +44,14 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
     let max = 0;
     consumption.forEach(c => {
       c.dailyConsumptions.forEach((val, idx) => {
-        if (val > 0) max = Math.max(max, idx);
+        if (val >= 0) max = Math.max(max, idx);
       });
     });
     return max; 
   }, [consumption]);
 
-  // Use Indices for filtering
   const [startIndex, setStartIndex] = useState<number>(0);
-  const [endIndex, setEndIndex] = useState<number>(30); // Default to a month roughly
+  const [endIndex, setEndIndex] = useState<number>(30);
   
   useEffect(() => {
     if (lastIndexWithData > 0) {
@@ -60,15 +59,29 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
     }
   }, [lastIndexWithData]);
   
-  const getRestriction = (code: string) => restrictions.find(r => r.usageCode === code)?.percentage || 0;
-  
+  // Helper to get restriction for a specific date index
+  const getRestrictionPctForDate = (usageCode: string, dateIndex: number): number => {
+    const r = restrictions.find(x => x.usageCode === usageCode);
+    if (!r || !r.periods || r.periods.length === 0) return 0;
+
+    // Find the active period. Periods should be sorted by date.
+    const sortedPeriods = [...r.periods].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    let activePct = 0;
+    
+    for (const p of sortedPeriods) {
+        const pIdx = getIndexFromDate(p.startDate);
+        if (pIdx <= dateIndex) {
+            activePct = p.percentage;
+        } else {
+            break; // Period starts in future relative to this dateIndex
+        }
+    }
+    return activePct;
+  };
+
   const calculateData = (rec: ConsumptionRecord) => {
     const industry = industries.find(i => i.subscriptionId === rec.subscriptionId);
     if (!industry || !industry.baseMonthAvg) return null; 
-    
-    const percentage = getRestriction(industry.usageCode);
-    const limitFactor = (1 - percentage / 100);
-    const allowed = industry.baseMonthAvg * limitFactor;
     
     // Slice data based on indices
     const filteredConsumptions = rec.dailyConsumptions.slice(startIndex, endIndex + 1);
@@ -76,32 +89,57 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
     const dailyData = filteredConsumptions.map((val, idx) => {
       const actualIndex = startIndex + idx;
       const dateStr = getDateFromIndex(actualIndex);
+      
+      const pct = getRestrictionPctForDate(industry.usageCode, actualIndex);
+      const allowed = industry.baseMonthAvg * (1 - pct / 100);
+
+      const hasData = val >= 0;
+      const isViolation = hasData && val > allowed;
+
       return {
         index: actualIndex,
         date: dateStr,
         displayDate: dateStr.substring(5), // 09/28
-        value: val,
+        value: hasData ? val : 0,
+        hasData: hasData,
         allowed: allowed,
-        violation: val > allowed ? val - allowed : 0,
-        isViolation: val > allowed
+        violation: isViolation ? val - allowed : 0,
+        isViolation: isViolation
       };
-    });
+    }); // We keep -1 as 0 for sum but flag it as no data? Better to filter for stats.
 
-    const violationDays = dailyData.filter(d => d.isViolation).length;
-    const compliantDays = dailyData.length - violationDays;
-    const totalViolation = dailyData.reduce((sum, d) => sum + d.violation, 0);
-    const totalConsumption = dailyData.reduce((sum, d) => sum + d.value, 0);
+    // Filter for actual stats
+    const validDays = dailyData.filter(d => d.hasData);
+
+    const violationDays = validDays.filter(d => d.isViolation).length;
+    const compliantDays = validDays.length - violationDays;
+    const totalViolation = validDays.reduce((sum, d) => sum + d.violation, 0);
+    const totalConsumption = validDays.reduce((sum, d) => sum + d.value, 0);
 
     let lastValue = 0;
-    // Find last non-zero
-    const lastEntry = dailyData.filter(d => d.value > 0).pop();
-    if(lastEntry) lastValue = lastEntry.value;
+    let lastAllowed = 0;
+    let lastPct = 0;
+
+    // Find last valid value
+    const lastValidDay = validDays[validDays.length - 1];
+    
+    if (lastValidDay) {
+        lastValue = lastValidDay.value;
+        lastAllowed = lastValidDay.allowed;
+        lastPct = getRestrictionPctForDate(industry.usageCode, lastValidDay.index);
+    } else if (dailyData.length > 0) {
+        // Fallback if no valid data in range
+        const lastDay = dailyData[dailyData.length-1];
+        lastAllowed = lastDay.allowed;
+        lastPct = getRestrictionPctForDate(industry.usageCode, lastDay.index);
+    }
 
     return {
       industry,
       rec,
-      dailyData,
-      allowed,
+      dailyData: dailyData.map(d => ({ ...d, value: d.hasData ? d.value : null })), // Null for charts
+      lastAllowed,
+      lastPct,
       violationDays,
       compliantDays,
       totalViolation,
@@ -114,18 +152,18 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
     return consumption.map(c => {
       const data = calculateData(c);
       if (!data) return null;
-      const violationAmt = data.lastValue > data.allowed ? data.lastValue - data.allowed : 0;
-      const violationPct = (violationAmt / data.allowed) * 100;
+      const violationAmt = data.lastValue > data.lastAllowed ? data.lastValue - data.lastAllowed : 0;
+      const violationPct = data.lastAllowed > 0 ? (violationAmt / data.lastAllowed) * 100 : 0;
       
       return {
         subscriptionId: c.subscriptionId,
         name: data.industry.name,
         baseMonthAvg: data.industry.baseMonthAvg,
         lastValue: data.lastValue,
-        restriction: getRestriction(data.industry.usageCode),
+        restriction: data.lastPct, // This is the restriction at the moment of last value
         violationAmt: violationAmt,
         violationPct: isFinite(violationPct) ? violationPct : 0,
-        allowed: data.allowed
+        allowed: data.lastAllowed
       };
     }).filter(item => item !== null) as any[];
   }, [consumption, industries, restrictions, startIndex, endIndex]);
@@ -172,9 +210,9 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
       'نام واحد صنعتی': item.name,
       'شماره اشتراک': item.subscriptionId,
       'مصرف مبنا (آبان)': item.baseMonthAvg,
-      'سقف مجاز': Math.floor(item.allowed),
+      'سقف مجاز (روز آخر)': Math.floor(item.allowed),
       'آخرین مصرف': item.lastValue,
-      'محدودیت (%)': item.restriction,
+      'محدودیت روز آخر (%)': item.restriction,
       'میزان تخطی': Math.floor(item.violationAmt),
       'درصد تخطی (%)': item.violationPct.toFixed(2)
     }));
@@ -193,7 +231,7 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
     
     try {
         const canvas = await html2canvas(reportRef.current, {
-            scale: 2, // High resolution
+            scale: 2, 
             useCORS: true,
             logging: false,
             backgroundColor: '#ffffff'
@@ -342,8 +380,8 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
                 <div className="font-bold text-xl">{selectedData.industry.baseMonthAvg.toLocaleString()}</div>
                 </div>
                 <div className="bg-white p-6 border rounded-2xl shadow-sm border-r-4 border-r-green-500">
-                <span className="text-sm text-green-600 block mb-2 font-medium">سقف مجاز پایش</span>
-                <div className="font-bold text-xl text-green-700">{Math.floor(selectedData.allowed).toLocaleString()}</div>
+                <span className="text-sm text-green-600 block mb-2 font-medium">سقف مجاز (روز آخر)</span>
+                <div className="font-bold text-xl text-green-700">{Math.floor(selectedData.lastAllowed).toLocaleString()}</div>
                 </div>
                 <div className="bg-white p-6 border rounded-2xl shadow-sm border-r-4 border-r-red-500">
                 <span className="text-sm text-red-600 block mb-2 font-medium">آخرین مصرف گزارش شده</span>
@@ -352,20 +390,24 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
             </div>
 
             <div className="bg-white p-6 border rounded-2xl shadow-sm">
-                <h3 className="font-bold mb-6 text-center text-slate-700 text-lg">نمودار تحلیلی روند مصرف ({getDateFromIndex(startIndex)} تا {getDateFromIndex(endIndex)})</h3>
+                <h3 className="font-bold mb-6 text-center text-slate-700 text-lg">نمودار تحلیلی روند مصرف و تغییرات سقف مجاز</h3>
                 <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={selectedData.dailyData}>
+                    <ComposedChart data={selectedData.dailyData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="displayDate" />
                     <YAxis />
-                    <ReferenceLine y={selectedData.allowed} stroke="#ef4444" strokeDasharray="5 5" label={{ position: 'top', value: 'سقف مجاز', fill: '#ef4444', fontSize: 12 }} />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    <Tooltip 
+                        formatter={(v: any) => v !== null ? v.toLocaleString() : 'بدون داده'} 
+                        contentStyle={{fontFamily: 'Vazirmatn'}} 
+                    />
+                    <Line type="step" dataKey="allowed" stroke="#10b981" strokeWidth={3} name="سقف مجاز (متغیر)" dot={false} />
+                    <Bar dataKey="value" name="مصرف روزانه" radius={[4, 4, 0, 0]}>
                         {selectedData.dailyData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.value > selectedData.allowed ? '#ef4444' : '#3b82f6'} />
+                        <Cell key={`cell-${index}`} fill={entry.value !== null && entry.value > entry.allowed ? '#ef4444' : '#3b82f6'} />
                         ))}
                     </Bar>
-                    </BarChart>
+                    </ComposedChart>
                 </ResponsiveContainer>
                 </div>
             </div>
@@ -381,7 +423,7 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
             <div className="flex items-center gap-3 mb-6 justify-between">
                 <div className="flex items-center gap-3">
                    <div className="w-2.5 h-8 bg-slate-900 rounded-full"></div>
-                   <h3 className="text-2xl font-black text-slate-800">جدول جامع پایش</h3>
+                   <h3 className="text-2xl font-black text-slate-800">جدول جامع پایش (آخرین وضعیت بازه)</h3>
                 </div>
                 
                  <div className="flex items-center gap-2 no-print">
@@ -403,7 +445,7 @@ const Reports: React.FC<ReportsProps> = ({ industries, consumption, restrictions
                     {visibleColumns.name && <th className="p-4 border border-slate-700 cursor-pointer" onClick={() => toggleSort('name')}>نام واحد</th>}
                     {visibleColumns.baseMonthAvg && <th className="p-4 border border-slate-700 cursor-pointer" onClick={() => toggleSort('baseMonthAvg')}>مصرف مبنا</th>}
                     {visibleColumns.lastValue && <th className="p-4 border border-slate-700 cursor-pointer" onClick={() => toggleSort('lastValue')}>آخرین مصرف</th>}
-                    {visibleColumns.restriction && <th className="p-4 border border-slate-700 cursor-pointer" onClick={() => toggleSort('restriction')}>محدودیت</th>}
+                    {visibleColumns.restriction && <th className="p-4 border border-slate-700 cursor-pointer" onClick={() => toggleSort('restriction')}>محدودیت (فعلی)</th>}
                     {visibleColumns.violationAmt && <th className="p-4 border border-slate-700 cursor-pointer" onClick={() => toggleSort('violationAmt')}>میزان تخطی</th>}
                     {visibleColumns.violationPct && <th className="p-4 border border-slate-700 cursor-pointer" onClick={() => toggleSort('violationPct')}>درصد تخطی</th>}
                     {visibleColumns.chart && <th className="p-4 border border-slate-700 text-center">وضعیت</th>}
