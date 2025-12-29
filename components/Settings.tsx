@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Restriction, Industry, RestrictionPeriod } from '../types';
-import { Calendar, Plus, Trash2, ChevronDown, ChevronUp, Save, AlertCircle } from 'lucide-react';
+import { Calendar, Plus, Trash2, ChevronDown, ChevronUp, Save, AlertCircle, Database, RefreshCw } from 'lucide-react';
 import { Button, Input, Card, CardContent, CardHeader, CardTitle } from './ui/Base';
 import { START_DATE, getIndexFromDate } from '../services/dateUtils';
 
@@ -129,6 +129,16 @@ const Settings: React.FC<SettingsProps> = ({ restrictions, setRestrictions, indu
           }
           return updated;
       });
+  };
+
+  const handleResetData = () => {
+      const confirmText = "آیا مطمئن هستید؟ تمام داده‌های ذخیره شده (صنایع، مصارف، سوابق) پاک خواهند شد و قابل بازگشت نیستند.";
+      if (window.confirm(confirmText)) {
+          if (window.confirm("عملیات غیرقابل بازگشت است. ادامه می‌دهید؟")) {
+              localStorage.clear();
+              window.location.reload();
+          }
+      }
   };
 
   return (
@@ -260,6 +270,30 @@ const Settings: React.FC<SettingsProps> = ({ restrictions, setRestrictions, indu
             </Card>
           );
         })}
+      </div>
+
+      <div className="border-t pt-8 mt-12">
+           <Card className="border-red-200 bg-red-50">
+               <CardHeader className="pb-2">
+                   <CardTitle className="text-red-800 flex items-center gap-2 text-lg">
+                       <Database size={20} /> منطقه خطر (مدیریت داده‌ها)
+                   </CardTitle>
+               </CardHeader>
+               <CardContent>
+                   <p className="text-sm text-red-600 mb-4">
+                       در صورتی که برنامه دچار مشکل شده یا می‌خواهید تمام اطلاعات را پاک کرده و از نو شروع کنید، از دکمه زیر استفاده کنید.
+                       این عمل تمام داده‌های ذخیره شده در مرورگر را حذف می‌کند.
+                   </p>
+                   <Button 
+                        variant="destructive" 
+                        onClick={handleResetData}
+                        className="gap-2"
+                   >
+                       <RefreshCw size={16} />
+                       بازنشانی کامل سیستم (Factory Reset)
+                   </Button>
+               </CardContent>
+           </Card>
       </div>
     </div>
   );
